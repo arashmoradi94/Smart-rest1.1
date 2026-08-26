@@ -11,11 +11,11 @@ const prisma = new PrismaClient({
 
 const users = [
   { name: "مدیر سیستم", username: "admin", password: "admin1234", role: "ADMIN" },
-  { name: "علی رضایی", username: "ali", password: "ali1234", role: "EMPLOYEE" },
-  { name: "محمد احمدی", username: "mohammad", password: "mohammad1234", role: "EMPLOYEE" },
-  { name: "رضا کریمی", username: "reza", password: "reza1234", role: "EMPLOYEE" },
-  { name: "سارا موسوی", username: "sara", password: "sara1234", role: "EMPLOYEE" },
-  { name: "نیما حسینی", username: "nima", password: "nima1234", role: "EMPLOYEE" },
+  { name: "امیر رضا دیانت پی", username: "amirreza", password: "123456", role: "EMPLOYEE" },
+  { name: "مهدی علیمردانی", username: "mahdi", password: "123456", role: "EMPLOYEE" },
+  { name: " آرش مرادی ", username: "arash", password: "12345679", role: "EMPLOYEE" },
+  { name: "تستی 1", username: "test1", password: "123456", role: "EMPLOYEE" },
+  { name: "تستی 2", username: "test2", password: "123456", role: "EMPLOYEE" },
 ];
 
 async function main() {
