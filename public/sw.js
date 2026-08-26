@@ -38,12 +38,20 @@ self.addEventListener("push", (e) => {
   try {
     data = e.data ? e.data.json() : {};
   } catch {}
+  const vibration = {
+    "break-start": [70, 80, 70],
+    "break-end": [100, 60, 100, 60, 150],
+    reminder: [70],
+    achievement: [50, 50, 50, 50, 90],
+    announcement: [60],
+  }[data.kind] ?? [60];
   e.waitUntil(
     self.registration.showNotification(data.title ?? "مدیریت استراحت", {
       body: data.body ?? "",
       icon: "/icon.svg",
       badge: "/icon.svg",
       tag: data.tag,
+      vibrate: vibration,
       dir: "rtl",
       lang: "fa",
       data: { url: data.url ?? "/dashboard" },

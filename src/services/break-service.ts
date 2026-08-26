@@ -51,7 +51,7 @@ export async function startBreak(userId: string, now = new Date()) {
     await awardCoins(userId, COIN_RULES.BREAK_ON_TIME, `BREAK_ONTIME:${open.id}`).catch(() => {});
   }
   const { sendPushToUser } = await import("@/lib/push");
-  sendPushToUser(userId, { title: "☕ استراحت", body: "زمان استراحت شما شروع شد.", tag: "break-start", url: "/dashboard" }).catch(() => {});
+  sendPushToUser(userId, { title: "☕ استراحت", body: "زمان استراحت شما شروع شد.", tag: "break-start", kind: "break-start", url: "/dashboard" }).catch(() => {});
   const { getEmployeeState } = await import("@/services/state-service");
   return getEmployeeState(userId, now);
 }
@@ -82,7 +82,7 @@ export async function returnToWork(userId: string, now = new Date()) {
     await awardCoins(userId, COIN_RULES.RETURN_ON_TIME, `RETURN_ONTIME:${open.id}`).catch(() => {});
   }
   const { sendPushToUser } = await import("@/lib/push");
-  sendPushToUser(userId, { title: "💼 بازگشت به کار", body: "ثبت شد. موفق باشی!", tag: "return", url: "/dashboard" }).catch(() => {});
+  sendPushToUser(userId, { title: "💼 بازگشت به کار", body: "ثبت شد. موفق باشی!", tag: "return", kind: "break-end", url: "/dashboard" }).catch(() => {});
 
   const fresh = (await getActiveShift(userId))!;
   await ensureNextBreak(fresh, settings, now);

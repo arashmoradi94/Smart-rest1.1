@@ -20,7 +20,7 @@ export function getVapidPublicKey() {
 
 export async function sendPushToUser(
   userId: string,
-  payload: { title: string; body: string; tag?: string; url?: string },
+  payload: { title: string; body: string; tag?: string; url?: string; kind?: string },
 ) {
   if (!ensureConfigured()) return;
   const subs = await prisma.pushSubscription.findMany({ where: { userId } });

@@ -15,7 +15,7 @@ import {
 import { StatusBadge } from "@/components/status-badge";
 import { TimerRing } from "@/components/timer-ring";
 import { ThemeToggle } from "@/components/theme-toggle";
-import { PushSetup, enablePush, notify, requestNotificationPermission } from "@/components/push-setup";
+import { PushSetup, enablePush, notify, requestNotificationPermission, type NotificationKind } from "@/components/push-setup";
 import { AnalyticsPanel } from "@/components/analytics-panel";
 import { CoinsPanel } from "@/components/gamification/coins-panel";
 import { formatDuration, formatPersianNumber, formatPersianTime } from "@/lib/utils";
@@ -97,7 +97,7 @@ export function EmployeeDashboard({ userName }: { userName: string }) {
           const ad = await ar.json();
           if (ad.message) {
             if (seenAnnouncement.current && ad.message !== seenAnnouncement.current) {
-              notify("📢 اطلاعیه جدید", ad.message, "announcement");
+              notify("📢 اطلاعیه جدید", ad.message, "announcement", "announcement");
             }
             seenAnnouncement.current = ad.message;
             setAnnouncement(ad.message);
@@ -163,10 +163,10 @@ export function EmployeeDashboard({ userName }: { userName: string }) {
   // Break notifications: early warning, start, end warning, end — fired once per event
   useEffect(() => {
     if (!state?.hasActiveShift) return;
-    const fire = (key: string, title: string, body: string) => {
+    const fire = (key: string, title: string, body: string, kind: NotificationKind) => {
       if (notified.current.has(key)) return;
       notified.current.add(key);
-      notify(title, body, key);
+      notify(title, body, key, kind);
     };
     const check = () => {
       const nowServer = Date.now() + offsetRef.current;
@@ -175,17 +175,17 @@ export function EmployeeDashboard({ userName }: { userName: string }) {
         const start = new Date(state.nextBreak.scheduledStart).getTime();
         const ms = start - nowServer;
         if (ms > 0 && ms <= s.earlyNotificationMinutes * 60_000) {
-          fire(`b${start}:early`, "☕ زمان استراحت نزدیک است", `تا شروع استراحت ${s.earlyNotificationMinutes} دقیقه باقی مانده.`);
+          fire(`b${start}:early`, "☕ زمان استراحت نزدیک است", `تا شروع استراحت ${s.earlyNotificationMinutes} دقیقه باقی مانده.`, "reminder");
         } else if (ms <= 0) {
-          fire(`b${start}:start`, "☕ استراحت", "زمان استراحت شما شروع شد.");
+          fire(`b${start}:start`, "☕ استراحت", "زمان استراحت شما شروع شد.", "break-start");
         }
       } else if ((state.userStatus === "ON_BREAK" || state.userStatus === "LATE") && state.currentBreak) {
         const end = new Date(state.currentBreak.scheduledEnd).getTime();
         const ms = end - nowServer;
         if (ms > 0 && ms <= s.endNotificationMinutes * 60_000) {
-          fire(`b${end}:warn`, "⚠️ پایان استراحت نزدیک است", `فقط ${s.endNotificationMinutes} دقیقه تا پایان استراحت باقی مانده.`);
+          fire(`b${end}:warn`, "⚠️ پایان استراحت نزدیک است", `فقط ${s.endNotificationMinutes} دقیقه تا پایان استراحت باقی مانده.`, "reminder");
         } else if (ms <= 0) {
-          fire(`b${end}:end`, "🔴 پایان استراحت", "زمان استراحت تمام شد. لطفاً آنلاین شوید.");
+          fire(`b${end}:end`, "🔴 پایان استراحت", "زمان استراحت تمام شد. لطفاً آنلاین شوید.", "break-end");
         }
       }
     };

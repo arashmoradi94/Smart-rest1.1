@@ -25,6 +25,37 @@
   box-sizing: border-box;
 }
 
+.notification-toast {
+  position: fixed;
+  z-index: 50;
+  top: max(1rem, env(safe-area-inset-top));
+  left: max(1rem, env(safe-area-inset-left));
+  right: max(1rem, env(safe-area-inset-right));
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  width: auto;
+  max-width: 28rem;
+  margin-inline: auto;
+  padding: 0.875rem 1rem;
+  border: 1px solid var(--border);
+  border-radius: 1rem;
+  background: var(--card);
+  box-shadow: 0 12px 32px rgba(15, 23, 42, 0.18);
+  backdrop-filter: blur(14px);
+  animation: notification-in 220ms ease-out;
+}
+
+.notification-toast span {
+  color: var(--muted);
+  font-size: 0.875rem;
+}
+
+@keyframes notification-in {
+  from { opacity: 0; transform: translateY(-0.5rem); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
 html {
   direction: rtl;
 }
