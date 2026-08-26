@@ -18,11 +18,30 @@ beforeAll(async () => {
     if (fs.existsSync(`dev.db${ext}`)) fs.copyFileSync(`dev.db${ext}`, `tmp-test.db${ext}`);
   }
   db = await import("@/lib/db");
+  // Deterministic baseline: close any stale active shifts copied from dev.db
+  await db.prisma.shift.updateMany({
+    where: { status: "ACTIVE" },
+    data: { status: "ENDED", endedAt: new Date() },
+  });
+  await db.prisma.break.updateMany({
+    where: { actualStart: { not: null }, actualEnd: null },
+    data: { actualEnd: new Date(), status: "COMPLETED" },
+  });
+  await db.prisma.user.updateMany({ data: { status: "OFFLINE" } });
   shiftSvc = await import("@/services/shift-service");
   breakSvc = await import("@/services/break-service");
   stateSvc = await import("@/services/state-service");
   const users = await db.prisma.user.findMany();
   ids = Object.fromEntries(users.map((u) => [u.username, u.id]));
+  // Self-healing seed: guarantee the users this suite needs exist (dev.db may have been edited)
+  for (const name of ["ali", "mohammad", "reza", "sara", "nima", "admin"]) {
+    if (!ids[name]) {
+      const u = await db.prisma.user.create({
+        data: { name, username: name, passwordHash: "x", role: name === "admin" ? "ADMIN" : "EMPLOYEE" },
+      });
+      ids[name] = u.id;
+    }
+  }
 });
 
 afterAll(async () => {

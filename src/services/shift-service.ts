@@ -12,6 +12,7 @@ export async function getServerTime(): Promise<Date> {
 }
 
 export async function getActiveShift(userId: string) {
+  if (!userId) throw new AppError("درخواست نامعتبر است", 400);
   return prisma.shift.findFirst({
     where: { userId, status: "ACTIVE" },
     include: { breaks: { orderBy: { breakIndex: "asc" } } },
@@ -28,6 +29,9 @@ export async function startShift(userId: string, now = new Date()) {
     include: { breaks: true },
   });
   await prisma.user.update({ where: { id: userId }, data: { status: "WORKING" } });
+  const { awardCoins, COIN_RULES, touchStreak } = await import("@/services/gamification-service");
+  await touchStreak(userId, now);
+  await awardCoins(userId, COIN_RULES.SHIFT_STARTED, `SHIFT_START:${shift.id}`).catch(() => {});
   await ensureNextBreak(shift, settings, now);
   const { getEmployeeState } = await import("@/services/state-service");
   return getEmployeeState(userId, now);
@@ -55,6 +59,11 @@ export async function endShift(userId: string, now = new Date()) {
 
   await prisma.shift.update({ where: { id: shift.id }, data: { endedAt: now, status: "ENDED" } });
   await prisma.user.update({ where: { id: userId }, data: { status: "OFFLINE" } });
+  const done = shift.breaks.filter((b) => ["COMPLETED", "LATE"].includes(b.status));
+  if (done.length > 0 && done.every((b) => b.endDelayMinutes === 0 && b.status === "COMPLETED")) {
+    const { awardCoins, COIN_RULES } = await import("@/services/gamification-service");
+    await awardCoins(userId, COIN_RULES.PERFECT_SHIFT, `PERFECT:${shift.id}`).catch(() => {});
+  }
   const { getEmployeeState } = await import("@/services/state-service");
   return getEmployeeState(userId, now);
 }

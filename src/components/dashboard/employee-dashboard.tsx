@@ -16,6 +16,8 @@ import { StatusBadge } from "@/components/status-badge";
 import { TimerRing } from "@/components/timer-ring";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { PushSetup, enablePush, notify, requestNotificationPermission } from "@/components/push-setup";
+import { AnalyticsPanel } from "@/components/analytics-panel";
+import { CoinsPanel } from "@/components/gamification/coins-panel";
 import { formatDuration, formatPersianNumber, formatPersianTime } from "@/lib/utils";
 import type { EmployeeDashboardState } from "@/types";
 
@@ -74,6 +76,9 @@ export function EmployeeDashboard({ userName }: { userName: string }) {
   const [offline, setOffline] = useState(false);
   const [confirmEnd, setConfirmEnd] = useState(false);
   const notified = useRef<Set<string>>(new Set());
+  const [announcement, setAnnouncement] = useState("");
+  const seenAnnouncement = useRef("");
+  const [refreshKey, setRefreshKey] = useState(0);
 
   const apply = useCallback((s: EmployeeDashboardState) => {
     setState(s);
@@ -86,6 +91,19 @@ export function EmployeeDashboard({ userName }: { userName: string }) {
       if (!r.ok) throw new Error();
       apply(await r.json());
       setOffline(false);
+      try {
+        const ar = await fetch("/api/announcement", { cache: "no-store" });
+        if (ar.ok) {
+          const ad = await ar.json();
+          if (ad.message) {
+            if (seenAnnouncement.current && ad.message !== seenAnnouncement.current) {
+              notify("📢 اطلاعیه جدید", ad.message, "announcement");
+            }
+            seenAnnouncement.current = ad.message;
+            setAnnouncement(ad.message);
+          } else setAnnouncement("");
+        }
+      } catch {}
     } catch {
       setOffline(true);
     }
@@ -130,6 +148,7 @@ export function EmployeeDashboard({ userName }: { userName: string }) {
         else {
           apply(d);
           notified.current.clear();
+          setRefreshKey((k) => k + 1);
         }
       } catch {
         setOffline(true);
@@ -220,6 +239,16 @@ export function EmployeeDashboard({ userName }: { userName: string }) {
         </div>
       </header>
 
+
+      {announcement && (
+        <div
+          className="rounded-2xl px-4 py-3 text-sm font-medium"
+          style={{ background: "rgba(245,158,11,.12)", color: "var(--warning)" }}
+          role="status"
+        >
+          📢 {announcement}
+        </div>
+      )}
       {offline && (
         <div
           className="flex items-center gap-2 rounded-2xl px-4 py-3 text-sm font-medium"
@@ -408,6 +437,10 @@ export function EmployeeDashboard({ userName }: { userName: string }) {
           value={`${formatPersianNumber(state.stats.completedBreaks)} از ${formatPersianNumber(state.stats.breakCount)}`}
         />
       </section>
+
+      <AnalyticsPanel />
+
+      <CoinsPanel refreshKey={refreshKey} />
 
       {state.timeline.length > 0 && (
         <section className="glass-card rounded-3xl p-5">

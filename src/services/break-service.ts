@@ -46,6 +46,12 @@ export async function startBreak(userId: string, now = new Date()) {
     },
   });
   await prisma.user.update({ where: { id: userId }, data: { status: "ON_BREAK" } });
+  if (open.startDelayMinutes <= 1) {
+    const { awardCoins, COIN_RULES } = await import("@/services/gamification-service");
+    await awardCoins(userId, COIN_RULES.BREAK_ON_TIME, `BREAK_ONTIME:${open.id}`).catch(() => {});
+  }
+  const { sendPushToUser } = await import("@/lib/push");
+  sendPushToUser(userId, { title: "☕ استراحت", body: "زمان استراحت شما شروع شد.", tag: "break-start", url: "/dashboard" }).catch(() => {});
   const { getEmployeeState } = await import("@/services/state-service");
   return getEmployeeState(userId, now);
 }
@@ -71,6 +77,12 @@ export async function returnToWork(userId: string, now = new Date()) {
     },
   });
   await prisma.user.update({ where: { id: userId }, data: { status: "WORKING" } });
+  if (endDelay === 0) {
+    const { awardCoins, COIN_RULES } = await import("@/services/gamification-service");
+    await awardCoins(userId, COIN_RULES.RETURN_ON_TIME, `RETURN_ONTIME:${open.id}`).catch(() => {});
+  }
+  const { sendPushToUser } = await import("@/lib/push");
+  sendPushToUser(userId, { title: "💼 بازگشت به کار", body: "ثبت شد. موفق باشی!", tag: "return", url: "/dashboard" }).catch(() => {});
 
   const fresh = (await getActiveShift(userId))!;
   await ensureNextBreak(fresh, settings, now);

@@ -19,6 +19,12 @@ model User {
 
   shifts            Shift[]
   breaks            Break[]
+  xp                Int                @default(0)
+  level             Int                @default(1)
+  lastShiftDate     DateTime?
+  streakDays        Int                @default(0)
+  coinTransactions  CoinTransaction[]
+  redemptions       RewardRedemption[]
   pushSubscriptions PushSubscription[]
 }
 
@@ -69,6 +75,44 @@ model Settings {
   earlyNotificationMinutes Int      @default(2)
   endNotificationMinutes   Int      @default(2)
   updatedAt                DateTime @updatedAt
+}
+
+model CoinTransaction {
+  id        String   @id @default(cuid())
+  userId    String
+  amount    Int
+  type      String
+  reason    String
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+}
+
+model Reward {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  coinCost    Int
+  active      Boolean  @default(true)
+  limitCount  Int?
+  createdAt   DateTime @default(now())
+
+  redemptions RewardRedemption[]
+}
+
+model RewardRedemption {
+  id        String   @id @default(cuid())
+  rewardId  String
+  userId    String
+  coinSpent Int
+  createdAt DateTime @default(now())
+
+  reward Reward @relation(fields: [rewardId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
 }
 
 model AuditLog {

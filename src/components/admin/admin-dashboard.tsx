@@ -58,6 +58,7 @@ export function AdminDashboard({ adminName }: { adminName: string }) {
   const [busy, setBusy] = useState(false);
   const [showAddUser, setShowAddUser] = useState(false);
   const [newUser, setNewUser] = useState({ name: "", username: "", password: "", role: "EMPLOYEE" });
+  const [announcement, setAnnouncement] = useState("");
 
   const fetchState = useCallback(async () => {
     try {
@@ -110,6 +111,31 @@ export function AdminDashboard({ adminName }: { adminName: string }) {
       else {
         setMsg("تنظیمات ذخیره شد ✓");
         fetchState();
+      }
+    } catch {
+      setError("ارتباط برقرار نشد");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+
+  async function sendAnnouncement() {
+    if (!announcement.trim() || busy) return;
+    setBusy(true);
+    setError("");
+    setMsg("");
+    try {
+      const r = await fetch("/api/admin/announcement", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message: announcement }),
+      });
+      const d = await r.json();
+      if (!r.ok) setError(d.error ?? "ارسال ناموفق بود");
+      else {
+        setMsg("اطلاعیه ارسال شد ✓");
+        setAnnouncement("");
       }
     } catch {
       setError("ارتباط برقرار نشد");
@@ -343,6 +369,25 @@ export function AdminDashboard({ adminName }: { adminName: string }) {
               <p className="text-xs" style={{ color: "var(--muted)" }}>
                 تغییرات روی شیفت‌های فعال از استراحت بعدی اعمال می‌شود.
               </p>
+              <div className="mt-2 border-t pt-4" style={{ borderColor: "var(--border)" }}>
+                <h3 className="mb-2 text-sm font-bold">اطلاعیه به تیم</h3>
+                <textarea
+                  value={announcement}
+                  onChange={(e) => setAnnouncement(e.target.value)}
+                  placeholder="مثلاً: امروز حجم تماس‌ها بالاست؛ لطفاً استراحت‌ها را با هم هماهنگ کنید."
+                  rows={3}
+                  className="w-full rounded-xl border px-3 py-2 text-sm"
+                  style={{ borderColor: "var(--border)" }}
+                />
+                <button
+                  onClick={sendAnnouncement}
+                  disabled={busy || !announcement.trim()}
+                  className="mt-2 w-full rounded-xl py-2.5 text-sm font-bold text-white disabled:opacity-60"
+                  style={{ background: "var(--warning)" }}
+                >
+                  ارسال اطلاعیه
+                </button>
+              </div>
             </>
           )}
         </section>
