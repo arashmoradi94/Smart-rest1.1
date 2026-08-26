@@ -1,0 +1,91 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+model User {
+  id           String   @id @default(cuid())
+  name         String
+  username     String   @unique
+  passwordHash String
+  role         String   @default("EMPLOYEE")
+  status       String   @default("OFFLINE")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  shifts            Shift[]
+  breaks            Break[]
+  pushSubscriptions PushSubscription[]
+}
+
+model Shift {
+  id        String    @id @default(cuid())
+  userId    String
+  startedAt DateTime
+  endedAt   DateTime?
+  status    String    @default("ACTIVE")
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  user   User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  breaks Break[]
+
+  @@index([userId, status])
+}
+
+model Break {
+  id                String    @id @default(cuid())
+  shiftId           String
+  userId            String
+  breakIndex        Int
+  scheduledStart    DateTime
+  scheduledEnd      DateTime
+  actualStart       DateTime?
+  actualEnd         DateTime?
+  durationMinutes   Int?
+  startDelayMinutes Int       @default(0)
+  endDelayMinutes   Int       @default(0)
+  status            String    @default("SCHEDULED")
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  shift Shift @relation(fields: [shiftId], references: [id], onDelete: Cascade)
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([shiftId])
+  @@index([userId, status])
+  @@index([scheduledStart, scheduledEnd])
+}
+
+model Settings {
+  id                       String   @id @default("default")
+  workDurationMinutes      Int      @default(60)
+  breakDurationMinutes     Int      @default(10)
+  maxConcurrentBreaks      Int      @default(5)
+  earlyNotificationMinutes Int      @default(2)
+  endNotificationMinutes   Int      @default(2)
+  updatedAt                DateTime @updatedAt
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  userId    String
+  action    String
+  details   String?
+  createdAt DateTime @default(now())
+}
+
+model PushSubscription {
+  id        String   @id @default(cuid())
+  userId    String
+  endpoint  String   @unique
+  p256dh    String
+  auth      String
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
