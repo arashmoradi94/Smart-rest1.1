@@ -23,18 +23,28 @@ export async function startShift(userId: string, now = new Date()) {
   const existing = await getActiveShift(userId);
   if (existing) throw new AppError("شیفت فعال شما از قبل آغاز شده است", 409);
 
+  // Verify the provided userId maps to an existing user. Some environments may feed username instead of id.
+  let resolvedUserId = userId;
+  const userRow = await prisma.user.findUnique({ where: { id: resolvedUserId } });
+  if (!userRow) {
+    // try resolving as username
+    const byUsername = await prisma.user.findUnique({ where: { username: resolvedUserId } });
+    if (byUsername) resolvedUserId = byUsername.id;
+    else throw new AppError("کاربر یافت نشد");
+  }
+
   const settings = await getSettings();
   const shift = await prisma.shift.create({
-    data: { userId, startedAt: now },
+    data: { userId: resolvedUserId, startedAt: now },
     include: { breaks: true },
   });
-  await prisma.user.update({ where: { id: userId }, data: { status: "WORKING" } });
+  await prisma.user.update({ where: { id: resolvedUserId }, data: { status: "WORKING" } });
   const { awardCoins, COIN_RULES, touchStreak } = await import("@/services/gamification-service");
-  await touchStreak(userId, now);
-  await awardCoins(userId, COIN_RULES.SHIFT_STARTED, `SHIFT_START:${shift.id}`).catch(() => {});
+  await touchStreak(resolvedUserId, now);
+  await awardCoins(resolvedUserId, COIN_RULES.SHIFT_STARTED, `SHIFT_START:${shift.id}`).catch(() => {});
   await ensureNextBreak(shift, settings, now);
   const { getEmployeeState } = await import("@/services/state-service");
-  return getEmployeeState(userId, now);
+  return getEmployeeState(resolvedUserId, now);
 }
 
 export async function endShift(userId: string, now = new Date()) {
