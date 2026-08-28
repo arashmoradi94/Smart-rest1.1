@@ -32,18 +32,18 @@ export async function getAdminState(now = new Date()): Promise<AdminDashboardSta
         const open = fresh.breaks[fresh.breaks.length - 1];
         if (open?.status === "ACTIVE") {
           status = now > open.scheduledEnd ? "LATE" : "ON_BREAK";
-          breakInfo = formatPersianTime(open.scheduledEnd);
+          breakInfo = formatPersianTime(open.scheduledEnd, settings.companyTimezone);
           delayMinutes = Math.max(0, diffMinutes(now, open.scheduledEnd));
         } else if (open?.status === "SCHEDULED") {
           status = "WORKING";
-          breakInfo = formatPersianTime(open.scheduledStart);
+          breakInfo = formatPersianTime(open.scheduledStart, settings.companyTimezone);
         } else {
           status = "WORKING";
           await ensureNextBreak(fresh, settings, now);
           const refetched = (await getActiveShift(u.id))!;
           const nb = refetched.breaks[refetched.breaks.length - 1];
           if (nb?.status === "SCHEDULED") {
-            breakInfo = formatPersianTime(nb.scheduledStart);
+            breakInfo = formatPersianTime(nb.scheduledStart, settings.companyTimezone);
           }
         }
       }

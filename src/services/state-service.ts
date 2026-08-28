@@ -27,21 +27,21 @@ function buildStats(breaks: BreakRow[], breakDurationMinutes: number) {
   };
 }
 
-function buildTimeline(shift: ShiftRow): TimelineEvent[] {
+function buildTimeline(shift: ShiftRow, timeZone?: string): TimelineEvent[] {
   const events: TimelineEvent[] = [
-    { time: formatPersianTime(shift.startedAt), label: "شروع شیفت", icon: "🚀", type: "shift_start" },
+    { time: formatPersianTime(shift.startedAt, timeZone), label: "شروع شیفت", icon: "🚀", type: "shift_start" },
   ];
   for (const b of shift.breaks) {
     if (b.actualStart) {
       events.push({
-        time: formatPersianTime(b.actualStart),
+        time: formatPersianTime(b.actualStart, timeZone),
         label: `شروع استراحت ${formatPersianNumber(b.breakIndex + 1)}`,
         icon: "☕",
         type: "break",
       });
     } else if (b.status === "SKIPPED") {
       events.push({
-        time: formatPersianTime(b.scheduledStart),
+        time: formatPersianTime(b.scheduledStart, timeZone),
         label: `استراحت ${formatPersianNumber(b.breakIndex + 1)} انجام نشد`,
         icon: "🚫",
         type: "break",
@@ -49,7 +49,7 @@ function buildTimeline(shift: ShiftRow): TimelineEvent[] {
     }
     if (b.actualEnd) {
       events.push({
-        time: formatPersianTime(b.actualEnd),
+        time: formatPersianTime(b.actualEnd, timeZone),
         label: "بازگشت به کار",
         icon: "💼",
         type: "return",
@@ -58,7 +58,7 @@ function buildTimeline(shift: ShiftRow): TimelineEvent[] {
   }
   if (shift.endedAt) {
     events.push({
-      time: formatPersianTime(shift.endedAt),
+      time: formatPersianTime(shift.endedAt, timeZone),
       label: "پایان شیفت",
       icon: "🏁",
       type: "shift_end",
@@ -121,7 +121,7 @@ export async function getEmployeeState(
     serverTime,
     shiftStartedAt: shift.startedAt.toISOString(),
     stats: buildStats(shift.breaks, settings.breakDurationMinutes),
-    timeline: buildTimeline(shift),
+    timeline: buildTimeline(shift, settings.companyTimezone),
     settings,
   };
 

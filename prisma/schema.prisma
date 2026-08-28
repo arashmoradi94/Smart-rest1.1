@@ -166,6 +166,8 @@ model BuddyMember {
   userId   String
   role     String   @default("MEMBER")
   joinedAt DateTime @default(now())
+  ready    Boolean  @default(false)
+  readyAt  DateTime?
 
   group BuddyGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
   user  User       @relation(fields: [userId], references: [id], onDelete: Cascade)

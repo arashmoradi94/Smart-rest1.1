@@ -281,18 +281,18 @@ export function EmployeeDashboard({ userName }: { userName: string }) {
               <p className="text-sm" style={{ color: "var(--muted)" }}>
                 استراحت بعدی: ساعت{" "}
                 <bdi className="font-bold" style={{ color: "var(--break)" }}>
-                  {formatPersianTime(state.nextBreak.scheduledStart)}
+                  {formatPersianTime(state.nextBreak.scheduledStart, state.settings.companyTimezone)}
                 </bdi>{" "}
                 تا{" "}
                 <bdi className="font-bold">
-                  {formatPersianTime(state.nextBreak.scheduledEnd)}
+                  {formatPersianTime(state.nextBreak.scheduledEnd, state.settings.companyTimezone)}
                 </bdi>
               </p>
             )}
             {isBreak && state.userStatus === "ON_BREAK" && (
               <p className="text-sm" style={{ color: "var(--muted)" }}>
-                ساعت {formatPersianTime(state.currentBreak!.scheduledStart)} شروع شده — تا{" "}
-                {formatPersianTime(state.currentBreak!.scheduledEnd)} فرصت داری استراحت کنی ☕
+                ساعت {formatPersianTime(state.currentBreak!.scheduledStart, state.settings.companyTimezone)} شروع شده — تا{" "}
+                {formatPersianTime(state.currentBreak!.scheduledEnd, state.settings.companyTimezone)} فرصت داری استراحت کنی ☕
               </p>
             )}
             {state.userStatus === "LATE" && (
@@ -375,8 +375,8 @@ export function EmployeeDashboard({ userName }: { userName: string }) {
           </div>
           <dl className="grid grid-cols-2 gap-3">
             {[
-              ["شروع شیفت", formatPersianTime(state.shiftStartedAt!)],
-              ["پایان شیفت", formatPersianTime(state.shiftEndedAt!)],
+              ["شروع شیفت", formatPersianTime(state.shiftStartedAt!, state.settings.companyTimezone)],
+              ["پایان شیفت", formatPersianTime(state.shiftEndedAt!, state.settings.companyTimezone)],
               ["مدت شیفت", formatDuration(state.report!.shiftDurationMinutes)],
               ["تعداد استراحت", formatPersianNumber(state.report!.breakCount)],
               ["استراحت مجاز", formatDuration(state.report!.allowedBreakMinutes)],

@@ -28,7 +28,7 @@ export async function startBreak(userId: string, now = new Date()) {
   }
   // scheduledStart is a suggestion; user may start late. Still prevent early starts.
   if (now < open.scheduledStart) {
-    throw new AppError(`زمان استراحت شما ساعت ${formatPersianTime(open.scheduledStart)} است`, 409);
+    throw new AppError(`زمان استراحت شما ساعت ${formatPersianTime(open.scheduledStart, settings.companyTimezone)} است`, 409);
   }
 
   const activeCount = await prisma.break.count({

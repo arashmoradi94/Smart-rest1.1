@@ -83,3 +83,56 @@ export async function removeBuddy(userId: string, removeUserId: string) {
   }
   throw new AppError("هم‌تیمی یافت نشد", 404);
 }
+
+export async function setMemberReady(groupId: string, userId: string, now = new Date()) {
+  const member = await prisma.buddyMember.findFirst({ where: { groupId, userId } });
+  if (!member) throw new AppError("عضو گروه یافت نشد", 404);
+  // mark ready
+  await prisma.buddyMember.update({ where: { id: member.id }, data: { ready: true, readyAt: now } as any });
+
+  // check if all members ready
+  const members = await prisma.buddyMember.findMany({ where: { groupId } });
+  if (members.length === 0) throw new AppError("گروه نامعتبر است", 400);
+  const allReady = members.every((m) => (m as any).ready === true);
+  if (allReady) {
+    // start the group break
+    return startGroupBreak(groupId, now);
+  }
+  return { success: true, ready: true };
+}
+
+export async function setMemberUnready(groupId: string, userId: string) {
+  const member = await prisma.buddyMember.findFirst({ where: { groupId, userId } });
+  if (!member) throw new AppError("عضو گروه یافت نشد", 404);
+  await prisma.buddyMember.update({ where: { id: member.id }, data: { ready: false, readyAt: null } as any });
+  return { success: true, ready: false };
+}
+
+async function startGroupBreak(groupId: string, now: Date) {
+  // Atomically set actualStart/actualEnd/status for each member's next scheduled break
+  const members = await prisma.buddyMember.findMany({ where: { groupId } });
+  const settings = await prisma.settings.findUnique({ where: { id: "default" } });
+  const breakDuration = settings?.breakDurationMinutes ?? 10;
+  const actualEnd = new Date(now.getTime() + breakDuration * 60_000);
+
+  const operations: any[] = [];
+  const userIds = members.map((m) => m.userId);
+
+  for (const uid of userIds) {
+    const shift = await prisma.shift.findFirst({ where: { userId: uid, status: "ACTIVE" }, include: { breaks: { orderBy: { breakIndex: "asc" } } } });
+    if (!shift) throw new AppError("یکی از اعضا شیفت فعال ندارد", 400);
+    const open = shift.breaks[shift.breaks.length - 1];
+    if (!open || open.status !== "SCHEDULED") throw new AppError("برای یکی از اعضا استراحت برنامه‌ریزی‌شده‌ای موجود نیست", 400);
+    operations.push(
+      prisma.break.update({ where: { id: open.id }, data: { actualStart: now, actualEnd, status: "ACTIVE", startDelayMinutes: Math.max(0, Math.round((now.getTime()-open.scheduledStart.getTime())/60000)) } }),
+    );
+    operations.push(prisma.user.update({ where: { id: uid }, data: { status: "ON_BREAK" } }));
+  }
+
+  await prisma.$transaction(operations);
+
+  // reset ready flags
+  await prisma.buddyMember.updateMany({ where: { groupId }, data: { ready: false, readyAt: null } as any });
+
+  return { success: true, actualStart: now.toISOString(), actualEnd: actualEnd.toISOString(), members: userIds };
+}
