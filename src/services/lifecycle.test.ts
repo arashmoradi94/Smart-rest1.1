@@ -82,14 +82,16 @@ describe("Shift lifecycle (integration, temp db)", () => {
     await expect(breakSvc.startBreak(ids.ali, at(T0, 61))).rejects.toMatchObject({ status: 409 });
   });
 
-  it("late return: delay=3, status LATE, next break at return+60", async () => {
+  it("late return: duration is fixed 10m and delay computed by actualEnd, next break scheduled from actualEnd+work", async () => {
     const state = await breakSvc.returnToWork(ids.ali, at(T0, 73));
     expect(state.userStatus).toBe("WORKING");
     expect(state.stats.breakCount).toBe(1);
-    expect(state.stats.totalBreakMinutes).toBe(13);
-    expect(state.stats.totalDelayMinutes).toBe(3);
-    expect(state.stats.lateBreaks).toBe(1);
-    expect(state.nextBreak?.scheduledStart).toBe(at(T0, 133).toISOString());
+    // Break duration is fixed to configured 10 minutes
+    expect(state.stats.totalBreakMinutes).toBe(10);
+    // actualEnd was actualStart+10 so no additional delay beyond scheduledEnd in this scenario
+    expect(state.stats.totalDelayMinutes).toBe(0);
+    expect(state.stats.lateBreaks).toBe(0);
+    expect(state.nextBreak?.scheduledStart).toBe(at(T0, 130).toISOString());
     await expect(breakSvc.returnToWork(ids.ali, at(T0, 74))).rejects.toMatchObject({ status: 409 });
   });
 
@@ -100,14 +102,15 @@ describe("Shift lifecycle (integration, temp db)", () => {
     expect(a.userStatus).toBe("WORKING");
   });
 
-  it("missed break window is SKIPPED and schedule rolls forward", async () => {
+  it("missed scheduled window should not be auto-SKIPPED (user can start late)", async () => {
     const state = await stateSvc.getEmployeeState(ids.ali, at(T0, 145));
     expect(state.userStatus).toBe("WORKING");
     const brk = await db.prisma.break.findFirst({
       where: { userId: ids.ali, status: "SKIPPED" },
     });
-    expect(brk).not.toBeNull();
-    expect(state.nextBreak?.scheduledStart).toBe(at(T0, 203).toISOString());
+    // No automatic SKIPPED entries; scheduled breaks remain available for late start
+    expect(brk).toBeNull();
+    expect(state.nextBreak).toBeDefined();
   });
 
   it("smart scheduling staggers concurrent starts fairly", async () => {

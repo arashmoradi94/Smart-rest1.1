@@ -69,21 +69,17 @@ export async function endShift(userId: string, now = new Date()) {
 }
 
 export async function autoAdvance(shift: ShiftWithBreaks, now: Date): Promise<boolean> {
-  const stale = shift.breaks.filter((b) => b.status === "SCHEDULED" && now > b.scheduledEnd);
-  if (stale.length) {
-    await prisma.break.updateMany({
-      where: { id: { in: stale.map((b) => b.id) } },
-      data: { status: "SKIPPED" },
-    });
-  }
+  // Do not auto-skip scheduled breaks when scheduledEnd passes; user may start late and still receive full break.
+  // Only update user status to LATE if an ACTIVE break's actualEnd has passed and the user wasn't marked late yet.
   const active = shift.breaks.find((b) => b.status === "ACTIVE");
-  if (active && now > active.scheduledEnd) {
+  if (active && active.actualEnd && now > active.actualEnd) {
     await prisma.user.updateMany({
       where: { id: shift.userId, status: { not: "LATE" } },
       data: { status: "LATE" },
     });
+    return false;
   }
-  return stale.length > 0;
+  return false;
 }
 
 export async function ensureNextBreak(

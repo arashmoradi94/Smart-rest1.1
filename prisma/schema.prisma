@@ -74,6 +74,7 @@ model Settings {
   maxConcurrentBreaks      Int      @default(5)
   earlyNotificationMinutes Int      @default(2)
   endNotificationMinutes   Int      @default(2)
+  companyTimezone          String   @default("Asia/Tehran")
   updatedAt                DateTime @updatedAt
 }
 
@@ -132,4 +133,43 @@ model PushSubscription {
   createdAt DateTime @default(now())
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model BuddyRequest {
+  id          String   @id @default(cuid())
+  requesterId String
+  targetId    String
+  status      String   @default("PENDING") // PENDING/ACCEPTED/REJECTED/CANCELLED
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  requester User @relation("BuddyRequest_requester", fields: [requesterId], references: [id], onDelete: Cascade)
+  target    User @relation("BuddyRequest_target", fields: [targetId], references: [id], onDelete: Cascade)
+
+  @@index([requesterId])
+  @@index([targetId])
+}
+
+model BuddyGroup {
+  id        String       @id @default(cuid())
+  name      String?
+  createdAt DateTime     @default(now())
+  createdBy String
+
+  createdByUser User        @relation(fields: [createdBy], references: [id], onDelete: Cascade)
+  members       BuddyMember[]
+}
+
+model BuddyMember {
+  id       String   @id @default(cuid())
+  groupId  String
+  userId   String
+  role     String   @default("MEMBER")
+  joinedAt DateTime @default(now())
+
+  group BuddyGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  user  User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([groupId, userId])
+  @@index([userId])
 }

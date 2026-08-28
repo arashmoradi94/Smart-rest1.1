@@ -126,7 +126,9 @@ export async function getEmployeeState(
   };
 
   if (open?.status === "ACTIVE") {
-    const overdue = now > open.scheduledEnd;
+    // Use actualEnd as the authoritative end time for the running break (set at start)
+    const endTime = open.actualEnd ?? open.scheduledEnd;
+    const overdue = now > endTime;
     return {
       ...base,
       userStatus: nextUserStatus(open, now),
@@ -135,12 +137,11 @@ export async function getEmployeeState(
         scheduledStart: open.scheduledStart.toISOString(),
         scheduledEnd: open.scheduledEnd.toISOString(),
         actualStart: open.actualStart?.toISOString(),
+        actualEnd: open.actualEnd?.toISOString(),
         status: open.status,
       },
       timerLabel: overdue ? "تأخیر بازگشت به کار" : "زمان باقی‌مانده استراحت",
-      timerSeconds: overdue
-        ? diffSeconds(now, open.scheduledEnd)
-        : diffSeconds(open.scheduledEnd, now),
+      timerSeconds: overdue ? diffSeconds(now, endTime) : diffSeconds(endTime, now),
     };
   }
 
