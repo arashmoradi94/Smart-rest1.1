@@ -34,6 +34,12 @@ export async function startShift(userId: string, now = new Date()) {
   }
 
   const settings = await getSettings();
+  // Log diagnostic info to help debug FK violations in production (Render)
+  try {
+    console.error("DEBUG startShift: creating shift", { providedUserId: userId, resolvedUserId });
+  } catch (e) {
+    // ignore logging failures
+  }
   const shift = await prisma.shift.create({
     data: { userId: resolvedUserId, startedAt: now },
     include: { breaks: true },
