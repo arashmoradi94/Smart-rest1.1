@@ -1,6 +1,7 @@
 import type { Prisma } from "@/generated/prisma/client";
 import { prisma } from "@/lib/db";
 import { addMinutes, AppError, diffMinutes } from "@/lib/utils";
+import { publishStates } from "@/lib/events";
 import { getSettings } from "@/services/settings-service";
 import { resolveBreakWithCapacity } from "@/services/break-scheduler";
 import type { FullSettings, ShiftReport, UserStatus } from "@/types";
@@ -23,79 +24,110 @@ export async function startShift(userId: string, now = new Date()) {
   const existing = await getActiveShift(userId);
   if (existing) throw new AppError("شیفت فعال شما از قبل آغاز شده است", 409);
 
-  // Verify the provided userId maps to an existing user. Some environments may feed username instead of id.
-  let resolvedUserId = userId;
-  const userRow = await prisma.user.findUnique({ where: { id: resolvedUserId } });
-  if (!userRow) {
-    // try resolving as username
-    const byUsername = await prisma.user.findUnique({ where: { username: resolvedUserId } });
-    if (byUsername) resolvedUserId = byUsername.id;
-    else throw new AppError("کاربر یافت نشد");
-  }
-
   const settings = await getSettings();
-  // Log diagnostic info to help debug FK violations in production (Render)
-  try {
-    console.error("DEBUG startShift: creating shift", { providedUserId: userId, resolvedUserId });
-  } catch (e) {
-    // ignore logging failures
-  }
   const shift = await prisma.shift.create({
-    data: { userId: resolvedUserId, startedAt: now },
+    data: { userId, startedAt: now },
     include: { breaks: true },
   });
-  await prisma.user.update({ where: { id: resolvedUserId }, data: { status: "WORKING" } });
+  await prisma.user.update({ where: { id: userId }, data: { status: "WORKING" } });
   const { awardCoins, COIN_RULES, touchStreak } = await import("@/services/gamification-service");
-  await touchStreak(resolvedUserId, now);
-  await awardCoins(resolvedUserId, COIN_RULES.SHIFT_STARTED, `SHIFT_START:${shift.id}`).catch(() => {});
+  await touchStreak(userId, now);
+  await awardCoins(userId, COIN_RULES.SHIFT_STARTED, `SHIFT_START:${shift.id}`).catch(() => {});
   await ensureNextBreak(shift, settings, now);
+  const { logAudit } = await import("@/lib/audit");
+  await logAudit(userId, "SHIFT_START", `shift:${shift.id}`);
+  publishStates([userId]);
   const { getEmployeeState } = await import("@/services/state-service");
-  return getEmployeeState(resolvedUserId, now);
+  return getEmployeeState(userId, now);
 }
 
 export async function endShift(userId: string, now = new Date()) {
   const shift = await getActiveShift(userId);
   if (!shift) throw new AppError("شیفت فعالی برای پایان دادن وجود ندارد", 409);
 
+  const settings = await getSettings();
   const open = shift.breaks[shift.breaks.length - 1];
-  if (open?.status === "ACTIVE") {
-    const endDelay = diffMinutes(now, open.scheduledEnd);
-    await prisma.break.update({
-      where: { id: open.id },
+  if (open && (open.status === "ACTIVE" || open.status === "OVERTIME") && open.actualStart) {
+    // Closing the shift closes the running break with its FULL server-guaranteed
+    // duration (never the elapsed wall-clock at shift end being cut short).
+    const fixedEnd = addMinutes(open.actualStart, settings.breakDurationMinutes + open.extendMinutes);
+    const endDelay = diffMinutes(now, fixedEnd);
+    await prisma.break.updateMany({
+      where: { id: open.id, actualEnd: null },
       data: {
-        actualEnd: now,
-        durationMinutes: open.actualStart ? diffMinutes(now, open.actualStart) : 0,
+        actualEnd: fixedEnd,
+        durationMinutes: settings.breakDurationMinutes + open.extendMinutes,
         endDelayMinutes: endDelay,
         status: endDelay > 0 ? "LATE" : "COMPLETED",
       },
     });
-  } else if (open?.status === "SCHEDULED") {
-    await prisma.break.update({ where: { id: open.id }, data: { status: "SKIPPED" } });
+  } else if (open && !open.actualStart && open.actualEnd === null && open.status === "SCHEDULED") {
+    await prisma.break.updateMany({ where: { id: open.id, status: "SCHEDULED" }, data: { status: "CANCELLED" } });
   }
 
   await prisma.shift.update({ where: { id: shift.id }, data: { endedAt: now, status: "ENDED" } });
   await prisma.user.update({ where: { id: userId }, data: { status: "OFFLINE" } });
+  // Any forming group containing this user must not block on them.
+  await prisma.$transaction(async (tx) => {
+    const memberships = await tx.groupBreakMember.findMany({
+      where: { userId, groupBreak: { status: "FORMING" } },
+      include: { groupBreak: true },
+    });
+    for (const m of memberships) {
+      const remaining = await tx.groupBreakMember.count({
+        where: { groupBreakId: m.groupBreakId, userId: { not: userId } },
+      });
+      await tx.groupBreakMember.delete({ where: { id: m.id } });
+      if (remaining === 0) {
+        await tx.groupBreak.update({ where: { id: m.groupBreakId }, data: { status: "CANCELLED" } });
+      }
+    }
+  }).catch(() => {});
+  await prisma.break.updateMany({
+    where: { userId, status: "SCHEDULED", shiftId: shift.id },
+    data: { groupBreakId: null },
+  });
+
   const done = shift.breaks.filter((b) => ["COMPLETED", "LATE"].includes(b.status));
   if (done.length > 0 && done.every((b) => b.endDelayMinutes === 0 && b.status === "COMPLETED")) {
     const { awardCoins, COIN_RULES } = await import("@/services/gamification-service");
     await awardCoins(userId, COIN_RULES.PERFECT_SHIFT, `PERFECT:${shift.id}`).catch(() => {});
   }
+  const { logAudit } = await import("@/lib/audit");
+  await logAudit(userId, "SHIFT_END", `shift:${shift.id} breaks:${done.length}`);
   const { getEmployeeState } = await import("@/services/state-service");
-  return getEmployeeState(userId, now);
+  const state = await getEmployeeState(userId, now);
+  publishStates([userId]);
+  return state;
 }
 
 export async function autoAdvance(shift: ShiftWithBreaks, now: Date): Promise<boolean> {
-  // Do not auto-skip scheduled breaks when scheduledEnd passes; user may start late and still receive full break.
-  // Only update user status to LATE if an ACTIVE break's actualEnd has passed and the user wasn't marked late yet.
-  const active = shift.breaks.find((b) => b.status === "ACTIVE");
-  if (active && active.actualEnd && now > active.actualEnd) {
-    await prisma.user.updateMany({
-      where: { id: shift.userId, status: { not: "LATE" } },
-      data: { status: "LATE" },
-    });
-    return false;
+  // scheduledStart/scheduledEnd are only SUGGESTIONS: a SCHEDULED break never auto-starts,
+  // never expires and is never skipped — it simply waits for the user's click.
+  const active = shift.breaks.find((b) => b.status === "ACTIVE" || b.status === "OVERTIME");
+  if (active && active.actualStart) {
+    const settings = await getSettings();
+    const effectiveEnd = addMinutes(active.actualStart, settings.breakDurationMinutes + active.extendMinutes);
+    if (now > effectiveEnd) {
+      await prisma.break.updateMany({
+        where: { id: active.id, status: "ACTIVE", actualEnd: null },
+        data: { status: "OVERTIME" },
+      }).catch(() => {});
+      await prisma.user.updateMany({
+        where: { id: shift.userId, status: { not: "LATE" } },
+        data: { status: "LATE" },
+      });
+    }
   }
   return false;
+}
+
+/** Fixed end of a break: ALWAYS full breakDuration from actualStart (server rule). */
+export function effectiveBreakEnd(
+  brk: { actualStart: Date | null },
+  breakDurationMinutes: number,
+): Date | null {
+  return brk.actualStart ? addMinutes(brk.actualStart, breakDurationMinutes) : null;
 }
 
 export async function ensureNextBreak(
@@ -103,10 +135,17 @@ export async function ensureNextBreak(
   settings: FullSettings,
   now: Date,
 ): Promise<void> {
-  const last = shift.breaks[shift.breaks.length - 1];
-  if (last && (last.status === "SCHEDULED" || last.status === "ACTIVE")) return;
+  const running = shift.breaks.find(
+    (b) => b.status === "SCHEDULED" || b.status === "ACTIVE" || b.status === "OVERTIME",
+  );
+  if (running) return;
 
-  const anchor = last ? (last.actualEnd ?? last.scheduledEnd) : shift.startedAt;
+  const last = shift.breaks[shift.breaks.length - 1];
+  // Next work cycle starts from the ACTUAL end of the previous break
+  // (a cancelled/skipped one falls back to its scheduled end).
+  const anchor = last
+    ? (last.actualEnd ?? last.scheduledEnd)
+    : shift.startedAt;
   const idealStart =
     addMinutes(anchor, settings.workDurationMinutes) > now
       ? addMinutes(anchor, settings.workDurationMinutes)
@@ -138,8 +177,14 @@ export async function ensureNextBreak(
   });
 }
 
-export function nextUserStatus(open: ShiftWithBreaks["breaks"][number] | undefined, now: Date): UserStatus {
-  if (open?.status === "ACTIVE") return now > open.scheduledEnd ? "LATE" : "ON_BREAK";
+export function nextUserStatus(
+  open: ShiftWithBreaks["breaks"][number] | undefined,
+  now: Date,
+  breakDurationMinutes: number,
+): UserStatus {
+  if (open?.status === "ACTIVE" && open.actualStart) {
+    return now > addMinutes(open.actualStart, breakDurationMinutes) ? "LATE" : "ON_BREAK";
+  }
   return "WORKING";
 }
 
