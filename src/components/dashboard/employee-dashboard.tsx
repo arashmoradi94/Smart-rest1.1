@@ -17,10 +17,8 @@ import { TimerRing } from "@/components/timer-ring";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { PushSetup, enablePush, notify, requestNotificationPermission, type NotificationKind } from "@/components/push-setup";
 import { AnalyticsPanel } from "@/components/analytics-panel";
-import { BuddyPanel } from "@/components/buddy/buddy-panel";
 import { CoinsPanel } from "@/components/gamification/coins-panel";
 import { formatDuration, formatPersianNumber, formatPersianTime } from "@/lib/utils";
-import { useLiveRefresh } from "@/lib/use-live";
 import type { EmployeeDashboardState } from "@/types";
 
 const STATUS_COLOR: Record<string, string> = {
@@ -32,12 +30,12 @@ const STATUS_COLOR: Record<string, string> = {
 
 function Countdown({
   targetMs,
-  offset,
+  offsetRef,
   onExpire,
   children,
 }: {
   targetMs: number;
-  offset: number;
+  offsetRef: React.RefObject<number>;
   onExpire: () => void;
   children: (seconds: number) => React.ReactNode;
 }) {
@@ -47,7 +45,7 @@ function Countdown({
     const id = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(id);
   }, []);
-  const seconds = Math.max(0, Math.round((targetMs - (now + offset)) / 1000));
+  const seconds = Math.max(0, Math.round((targetMs - (now + offsetRef.current)) / 1000));
   useEffect(() => {
     if (seconds <= 0 && !fired.current) {
       fired.current = true;
@@ -73,7 +71,6 @@ function StatCard({ title, value, danger }: { title: string; value: string; dang
 export function EmployeeDashboard({ userName }: { userName: string }) {
   const [state, setState] = useState<EmployeeDashboardState | null>(null);
   const offsetRef = useRef(0);
-  const [clockOffset, setClockOffset] = useState(0);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [offline, setOffline] = useState(false);
@@ -86,7 +83,6 @@ export function EmployeeDashboard({ userName }: { userName: string }) {
   const apply = useCallback((s: EmployeeDashboardState) => {
     setState(s);
     offsetRef.current = new Date(s.serverTime).getTime() - Date.now();
-    setClockOffset(new Date(s.serverTime).getTime() - Date.now());
   }, []);
 
   const fetchState = useCallback(async () => {
@@ -114,22 +110,26 @@ export function EmployeeDashboard({ userName }: { userName: string }) {
   }, [apply]);
 
   useEffect(() => {
-    queueMicrotask(() => void fetchState());
+    fetchState();
+    const id = setInterval(fetchState, 30_000);
+    const onVisible = () => {
+      if (document.visibilityState === "visible") fetchState();
+    };
     const onOnline = () => {
       setOffline(false);
       fetchState();
     };
     const onOffline = () => setOffline(true);
+    document.addEventListener("visibilitychange", onVisible);
     window.addEventListener("online", onOnline);
     window.addEventListener("offline", onOffline);
     return () => {
+      clearInterval(id);
+      document.removeEventListener("visibilitychange", onVisible);
       window.removeEventListener("online", onOnline);
       window.removeEventListener("offline", onOffline);
     };
   }, [fetchState]);
-
-  // SSE live updates + 60s polling fallback + visibility refresh
-  useLiveRefresh(fetchState, 60_000);
 
   const act = useCallback(
     async (path: string) => {
@@ -180,7 +180,7 @@ export function EmployeeDashboard({ userName }: { userName: string }) {
           fire(`b${start}:start`, "☕ استراحت", "زمان استراحت شما شروع شد.", "break-start");
         }
       } else if ((state.userStatus === "ON_BREAK" || state.userStatus === "LATE") && state.currentBreak) {
-        const end = new Date(state.currentBreak.endsAt ?? state.currentBreak.scheduledEnd).getTime();
+        const end = new Date(state.currentBreak.scheduledEnd).getTime();
         const ms = end - nowServer;
         if (ms > 0 && ms <= s.endNotificationMinutes * 60_000) {
           fire(`b${end}:warn`, "⚠️ پایان استراحت نزدیک است", `فقط ${s.endNotificationMinutes} دقیقه تا پایان استراحت باقی مانده.`, "reminder");
@@ -207,7 +207,7 @@ export function EmployeeDashboard({ userName }: { userName: string }) {
   const color = STATUS_COLOR[state.userStatus] ?? STATUS_COLOR.OFFLINE;
   const isBreak = state.userStatus === "ON_BREAK" || state.userStatus === "LATE";
   const targetMs = isBreak
-    ? new Date(state.currentBreak!.endsAt ?? state.currentBreak!.scheduledEnd).getTime()
+    ? new Date(state.currentBreak!.scheduledEnd).getTime()
     : state.nextBreak
       ? new Date(state.nextBreak.scheduledStart).getTime()
       : 0;
@@ -265,7 +265,7 @@ export function EmployeeDashboard({ userName }: { userName: string }) {
           <section className="glass-card flex flex-col items-center gap-4 rounded-3xl p-6">
             <StatusBadge status={state.userStatus} />
             {targetMs > 0 ? (
-              <Countdown key={targetMs} targetMs={targetMs} offset={clockOffset} onExpire={fetchState}>
+              <Countdown key={targetMs} targetMs={targetMs} offsetRef={offsetRef} onExpire={fetchState}>
                 {(seconds) => (
                   <TimerRing
                     seconds={seconds}
@@ -281,18 +281,18 @@ export function EmployeeDashboard({ userName }: { userName: string }) {
               <p className="text-sm" style={{ color: "var(--muted)" }}>
                 استراحت بعدی: ساعت{" "}
                 <bdi className="font-bold" style={{ color: "var(--break)" }}>
-                  {formatPersianTime(state.nextBreak.scheduledStart, state.settings.timezone)}
+                  {formatPersianTime(state.nextBreak.scheduledStart, state.settings.companyTimezone)}
                 </bdi>{" "}
                 تا{" "}
                 <bdi className="font-bold">
-                  {formatPersianTime(state.nextBreak.scheduledEnd, state.settings.timezone)}
+                  {formatPersianTime(state.nextBreak.scheduledEnd, state.settings.companyTimezone)}
                 </bdi>
               </p>
             )}
             {isBreak && state.userStatus === "ON_BREAK" && (
               <p className="text-sm" style={{ color: "var(--muted)" }}>
-                ساعت {formatPersianTime(state.currentBreak!.actualStart ?? state.currentBreak!.scheduledStart, state.settings.timezone)} شروع شده — تا{" "}
-                {formatPersianTime(state.currentBreak!.endsAt ?? state.currentBreak!.scheduledEnd, state.settings.timezone)} فرصت داری استراحت کنی ☕
+                ساعت {formatPersianTime(state.currentBreak!.scheduledStart, state.settings.companyTimezone)} شروع شده — تا{" "}
+                {formatPersianTime(state.currentBreak!.scheduledEnd, state.settings.companyTimezone)} فرصت داری استراحت کنی ☕
               </p>
             )}
             {state.userStatus === "LATE" && (
@@ -375,8 +375,8 @@ export function EmployeeDashboard({ userName }: { userName: string }) {
           </div>
           <dl className="grid grid-cols-2 gap-3">
             {[
-              ["شروع شیفت", formatPersianTime(state.shiftStartedAt!, state.settings.timezone)],
-              ["پایان شیفت", formatPersianTime(state.shiftEndedAt!, state.settings.timezone)],
+              ["شروع شیفت", formatPersianTime(state.shiftStartedAt!, state.settings.companyTimezone)],
+              ["پایان شیفت", formatPersianTime(state.shiftEndedAt!, state.settings.companyTimezone)],
               ["مدت شیفت", formatDuration(state.report!.shiftDurationMinutes)],
               ["تعداد استراحت", formatPersianNumber(state.report!.breakCount)],
               ["استراحت مجاز", formatDuration(state.report!.allowedBreakMinutes)],
@@ -439,8 +439,6 @@ export function EmployeeDashboard({ userName }: { userName: string }) {
       </section>
 
       <AnalyticsPanel />
-
-      <BuddyPanel userStatus={state.userStatus} suggestions={state.suggestions} timezone={state.settings.timezone} />
 
       <CoinsPanel refreshKey={refreshKey} />
 

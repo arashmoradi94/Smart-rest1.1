@@ -40,12 +40,13 @@ export function countConcurrentBreaks(
 
 export function formatPersianTime(date: Date | string, timeZone?: string): string {
   const d = typeof date === "string" ? new Date(date) : date;
-  return new Intl.DateTimeFormat("fa-IR", {
+  const opts: Intl.DateTimeFormatOptions = {
     hour: "2-digit",
     minute: "2-digit",
     hour12: false,
-    ...(timeZone ? { timeZone } : {}),
-  }).format(d);
+  };
+  if (timeZone) (opts as any).timeZone = timeZone;
+  return new Intl.DateTimeFormat("fa-IR", opts).format(d);
 }
 
 export function formatDuration(minutes: number): string {
