@@ -14,6 +14,7 @@ model User {
   passwordHash String
   role         String   @default("EMPLOYEE")
   status       String   @default("OFFLINE")
+  onCall       Boolean  @default(false)
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
@@ -55,7 +56,12 @@ model Break {
   durationMinutes   Int?
   startDelayMinutes Int       @default(0)
   endDelayMinutes   Int       @default(0)
+  extendMinutes     Int       @default(0)
+  groupBreakId      String?
   status            String    @default("SCHEDULED")
+  notifiedEarlyAt   DateTime?
+  notifiedEndWarnAt DateTime?
+  notifiedOverdueAt DateTime?
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
 
@@ -65,16 +71,87 @@ model Break {
   @@index([shiftId])
   @@index([userId, status])
   @@index([scheduledStart, scheduledEnd])
+  @@index([groupBreakId])
 }
 
 model Settings {
-  id                       String   @id @default("default")
-  workDurationMinutes      Int      @default(60)
-  breakDurationMinutes     Int      @default(10)
-  maxConcurrentBreaks      Int      @default(5)
-  earlyNotificationMinutes Int      @default(2)
-  endNotificationMinutes   Int      @default(2)
-  updatedAt                DateTime @updatedAt
+  id                        String   @id @default("default")
+  workDurationMinutes       Int      @default(60)
+  breakDurationMinutes      Int      @default(10)
+  maxConcurrentBreaks       Int      @default(5)
+  earlyNotificationMinutes  Int      @default(2)
+  endNotificationMinutes    Int      @default(2)
+  timezone                  String   @default("Asia/Tehran")
+  groupBreakEnabled         Boolean  @default(true)
+  groupSuggestWindowMinutes Int      @default(10)
+  maxGroupBreakLoadRatio    Float    @default(0.3)
+  updatedAt                 DateTime @updatedAt
+}
+
+model BuddyRequest {
+  id          String    @id @default(cuid())
+  requesterId String
+  addresseeId String
+  status      String    @default("PENDING")
+  createdAt   DateTime  @default(now())
+  respondedAt DateTime?
+
+  @@unique([requesterId, addresseeId])
+}
+
+model BuddyLink {
+  id        String   @id @default(cuid())
+  aId       String
+  bId       String
+  createdAt DateTime @default(now())
+
+  @@unique([aId, bId])
+  @@index([bId])
+}
+
+model GroupBreak {
+  id          String    @id @default(cuid())
+  status      String    @default("FORMING")
+  createdById String
+  startedAt   DateTime?
+  createdAt   DateTime  @default(now())
+
+  members GroupBreakMember[]
+}
+
+model Announcement {
+  id          String   @id @default(cuid())
+  authorId    String
+  message     String
+  audience    String   @default("ALL")
+  targetUserIds String  @default("[]")
+  createdAt   DateTime @default(now())
+
+  reads AnnouncementRead[]
+}
+
+model AnnouncementRead {
+  id             String   @id @default(cuid())
+  announcementId String
+  userId         String
+  readAt         DateTime @default(now())
+
+  announcement Announcement @relation(fields: [announcementId], references: [id], onDelete: Cascade)
+
+  @@unique([announcementId, userId])
+  @@index([userId])
+}
+
+model GroupBreakMember {
+  id           String    @id @default(cuid())
+  groupBreakId String
+  userId       String
+  readyAt      DateTime?
+
+  groupBreak GroupBreak @relation(fields: [groupBreakId], references: [id], onDelete: Cascade)
+
+  @@unique([groupBreakId, userId])
+  @@index([userId])
 }
 
 model CoinTransaction {
@@ -121,6 +198,9 @@ model AuditLog {
   action    String
   details   String?
   createdAt DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([userId, createdAt])
 }
 
 model PushSubscription {

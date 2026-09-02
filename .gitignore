@@ -45,3 +45,9 @@ next-env.d.ts
 
 # temp test database
 tmp-test.db*
+
+# local debug artifacts & db backups
+dev.db.bak*
+dbg.db
+dbg-*.mts
+tmp-test.db*

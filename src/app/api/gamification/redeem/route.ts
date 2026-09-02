@@ -1,13 +1,13 @@
 import { requireAuth } from "@/lib/auth";
-import { errorResponse } from "@/lib/api";
-import { AppError } from "@/lib/utils";
+import { errorResponse, limit, readJson } from "@/lib/api";
+import { validate, redeemSchema } from "@/lib/validators";
 import { redeemReward, getCoinBalance } from "@/services/gamification-service";
 
 export async function POST(request: Request) {
   try {
     const user = await requireAuth();
-    const { rewardId } = await request.json();
-    if (!rewardId) throw new AppError("rewardId الزامی است");
+    limit(request, user.id, "write");
+    const { rewardId } = validate(redeemSchema, await readJson(request));
     await redeemReward(user.id, rewardId);
     return Response.json({ ok: true, balance: await getCoinBalance(user.id) });
   } catch (e) {

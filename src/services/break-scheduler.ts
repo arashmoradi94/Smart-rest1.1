@@ -66,7 +66,10 @@ export function shouldAutoActivateBreak(
   scheduledStart: Date,
   scheduledEnd: Date,
 ): boolean {
-  return now >= scheduledStart && now < scheduledEnd;
+  void now;
+  void scheduledStart;
+  void scheduledEnd;
+  return false;
 }
 
 export function isBreakOverdue(now: Date, scheduledEnd: Date): boolean {

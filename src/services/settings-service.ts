@@ -1,22 +1,31 @@
 import { prisma } from "@/lib/db";
 import type { SchedulerSettings } from "@/types";
 
-export async function getSettings(): Promise<
-  SchedulerSettings & {
-    earlyNotificationMinutes: number;
-    endNotificationMinutes: number;
-  }
-> {
+export interface AppSettings extends SchedulerSettings {
+  earlyNotificationMinutes: number;
+  endNotificationMinutes: number;
+  timezone: string;
+  groupBreakEnabled: boolean;
+  groupSuggestWindowMinutes: number;
+  maxGroupBreakLoadRatio: number;
+}
+
+const DEFAULTS = {
+  workDurationMinutes: 60,
+  breakDurationMinutes: 10,
+  maxConcurrentBreaks: 5,
+  earlyNotificationMinutes: 2,
+  endNotificationMinutes: 2,
+  timezone: "Asia/Tehran",
+  groupBreakEnabled: true,
+  groupSuggestWindowMinutes: 10,
+  maxGroupBreakLoadRatio: 0.3,
+};
+
+export async function getSettings(): Promise<AppSettings> {
   const settings = await prisma.settings.upsert({
     where: { id: "default" },
-    create: {
-      id: "default",
-      workDurationMinutes: 60,
-      breakDurationMinutes: 10,
-      maxConcurrentBreaks: 5,
-      earlyNotificationMinutes: 2,
-      endNotificationMinutes: 2,
-    },
+    create: { id: "default", ...DEFAULTS },
     update: {},
   });
 
@@ -26,27 +35,17 @@ export async function getSettings(): Promise<
     maxConcurrentBreaks: settings.maxConcurrentBreaks,
     earlyNotificationMinutes: settings.earlyNotificationMinutes,
     endNotificationMinutes: settings.endNotificationMinutes,
+    timezone: settings.timezone,
+    groupBreakEnabled: settings.groupBreakEnabled,
+    groupSuggestWindowMinutes: settings.groupSuggestWindowMinutes,
+    maxGroupBreakLoadRatio: settings.maxGroupBreakLoadRatio,
   };
 }
 
-export async function updateSettings(
-  input: Partial<
-    SchedulerSettings & {
-      earlyNotificationMinutes: number;
-      endNotificationMinutes: number;
-    }
-  >,
-) {
+export async function updateSettings(input: Partial<AppSettings>) {
   return prisma.settings.upsert({
     where: { id: "default" },
-    create: {
-      id: "default",
-      workDurationMinutes: input.workDurationMinutes ?? 60,
-      breakDurationMinutes: input.breakDurationMinutes ?? 10,
-      maxConcurrentBreaks: input.maxConcurrentBreaks ?? 5,
-      earlyNotificationMinutes: input.earlyNotificationMinutes ?? 2,
-      endNotificationMinutes: input.endNotificationMinutes ?? 2,
-    },
+    create: { id: "default", ...DEFAULTS, ...input },
     update: input,
   });
 }

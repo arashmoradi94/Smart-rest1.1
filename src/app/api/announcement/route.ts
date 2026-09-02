@@ -1,15 +1,12 @@
 import { requireAuth } from "@/lib/auth";
-import { errorResponse } from "@/lib/api";
-import { prisma } from "@/lib/db";
+import { errorResponse, limit } from "@/lib/api";
+import { getLatestForUser } from "@/services/announcement-service";
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
-    await requireAuth();
-    const row = await prisma.auditLog.findFirst({
-      where: { action: "ANNOUNCEMENT" },
-      orderBy: { createdAt: "desc" },
-    });
-    return Response.json({ message: row?.details ?? "", at: row?.createdAt ?? null });
+    const user = await requireAuth();
+    limit(request, user.id, "read");
+    return Response.json(await getLatestForUser(user.id));
   } catch (e) {
     return errorResponse(e);
   }

@@ -31,6 +31,7 @@ export function AnalyticsPanel() {
 
   if (!stats) return null;
 
+  const periodLabel = stats.days === 1 ? "امروز" : stats.days === 7 ? "هفته" : "ماه";
   const items: Array<[string, string]> = [
     ["تعداد استراحت", formatPersianNumber(stats.breakCount)],
     ["میانگین استراحت", `${formatPersianNumber(stats.avgBreakMinutes)} دقیقه`],
@@ -48,19 +49,19 @@ export function AnalyticsPanel() {
       <div className="flex items-center justify-between">
         <h2 className="flex items-center gap-1.5 text-sm font-bold">
           <BarChart3 className="size-4" aria-hidden />
-          آمار {stats.days === 1 ? "امروز" : "هفته"}
+          آمار {periodLabel}
         </h2>
         <span className="flex rounded-xl p-1 text-xs font-bold" style={{ background: "rgba(148,163,184,.1)" }} role="tablist">
-          {([1, 7] as const).map((d) => (
+          {([1, 7, 30] as const).map((d) => (
             <button
               key={d}
               role="tab"
               aria-selected={days === d}
               onClick={() => setDays(d)}
-              className="rounded-lg px-3 py-1 transition"
+              className="rounded-lg px-2.5 py-1 transition"
               style={days === d ? { background: "var(--break)", color: "#fff" } : { color: "var(--muted)" }}
             >
-              {d === 1 ? "روزانه" : "هفتگی"}
+              {d === 1 ? "روزانه" : d === 7 ? "هفتگی" : "ماهانه"}
             </button>
           ))}
         </span>

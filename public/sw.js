@@ -1,5 +1,5 @@
-const CACHE = "break-manager-v1";
-const SHELL = ["/", "/login", "/manifest.webmanifest", "/icon.svg"];
+const CACHE = "break-manager-v2";
+const SHELL = ["/", "/login", "/manifest.webmanifest", "/icon.svg", "/icon-192.png", "/icon-512.png"];
 
 self.addEventListener("install", (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting()));

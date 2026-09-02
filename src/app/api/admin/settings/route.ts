@@ -1,11 +1,13 @@
 import { requireAdmin } from "@/lib/auth";
-import { errorResponse } from "@/lib/api";
+import { errorResponse, limit, readJson } from "@/lib/api";
+import { validate, settingsUpdateSchema } from "@/lib/validators";
 import { adminUpdateSettings } from "@/services/admin-service";
 import { getSettings } from "@/services/settings-service";
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
-    await requireAdmin();
+    const user = await requireAdmin();
+    limit(request, user.id, "read");
     return Response.json(await getSettings());
   } catch (e) {
     return errorResponse(e);
@@ -15,8 +17,9 @@ export async function GET() {
 export async function PUT(request: Request) {
   try {
     const user = await requireAdmin();
-    const body = await request.json();
-    return Response.json(await adminUpdateSettings(user.id, body));
+    limit(request, user.id, "write");
+    const input = validate(settingsUpdateSchema, await readJson(request));
+    return Response.json(await adminUpdateSettings(user.id, input));
   } catch (e) {
     return errorResponse(e);
   }

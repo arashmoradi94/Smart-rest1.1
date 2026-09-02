@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
   calculateBreakSchedule,
+  calculateBreakDuration,
   calculateEndDelay,
   calculateIdealBreakTime,
   resolveBreakWithCapacity,
+  shouldAutoActivateBreak,
 } from "@/services/break-scheduler";
 import type { ExistingBreakSlot, SchedulerSettings } from "@/types";
 
@@ -30,6 +32,11 @@ describe("BreakScheduler", () => {
 
   it("Test 3: return at 09:13 => delay 3 min", () => {
     expect(calculateEndDelay(at(9, 10), at(9, 13))).toBe(3);
+  });
+
+  it("delayed start at 16:07 still ends at 16:17", () => {
+    expect(calculateBreakDuration(at(16, 7), at(16, 17))).toBe(10);
+    expect(shouldAutoActivateBreak(at(16), at(16), at(16, 10))).toBe(false);
   });
 
   it("Test 5: delays when capacity full", () => {

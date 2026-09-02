@@ -1,13 +1,13 @@
-import { requireAdmin } from "@/lib/auth";
-import { errorResponse } from "@/lib/api";
-import { AppError } from "@/lib/utils";
+import { requireSupervisor } from "@/lib/auth";
+import { errorResponse, limit, readJson } from "@/lib/api";
+import { validate, overrideSchema } from "@/lib/validators";
 import { adminOverrideBreak } from "@/services/admin-service";
 
 export async function POST(request: Request) {
   try {
-    const admin = await requireAdmin();
-    const { userId, action } = await request.json();
-    if (!userId || !action) throw new AppError("userId و action الزامی است");
+    const admin = await requireSupervisor();
+    limit(request, admin.id, "write");
+    const { userId, action } = validate(overrideSchema, await readJson(request));
     return Response.json(await adminOverrideBreak(admin.id, userId, action));
   } catch (e) {
     return errorResponse(e);

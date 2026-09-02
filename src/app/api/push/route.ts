@@ -1,15 +1,14 @@
 import { requireAuth } from "@/lib/auth";
-import { errorResponse } from "@/lib/api";
-import { AppError } from "@/lib/utils";
+import { errorResponse, limit, readJson } from "@/lib/api";
+import { validate, pushSubscriptionSchema } from "@/lib/validators";
+import { logAudit } from "@/lib/audit";
 import { prisma } from "@/lib/db";
 
 export async function POST(request: Request) {
   try {
     const user = await requireAuth();
-    const sub = await request.json();
-    if (!sub?.endpoint || !sub?.keys?.p256dh || !sub?.keys?.auth) {
-      throw new AppError("اشتراک نامعتبر است");
-    }
+    limit(request, user.id, "write");
+    const sub = validate(pushSubscriptionSchema, await readJson(request));
     await prisma.pushSubscription.upsert({
       where: { endpoint: sub.endpoint },
       create: {
@@ -20,6 +19,7 @@ export async function POST(request: Request) {
       },
       update: { userId: user.id, p256dh: sub.keys.p256dh, auth: sub.keys.auth },
     });
+    await logAudit(user.id, "PUSH_SUBSCRIBE", sub.endpoint.slice(0, 60));
     return Response.json({ ok: true });
   } catch (e) {
     return errorResponse(e);
@@ -29,9 +29,11 @@ export async function POST(request: Request) {
 export async function DELETE(request: Request) {
   try {
     const user = await requireAuth();
-    const { endpoint } = await request.json();
+    limit(request, user.id, "write");
+    const { endpoint } = await readJson<{ endpoint?: string }>(request);
     if (endpoint) {
       await prisma.pushSubscription.deleteMany({ where: { endpoint, userId: user.id } });
+      await logAudit(user.id, "PUSH_UNSUBSCRIBE", endpoint.slice(0, 60));
     }
     return Response.json({ ok: true });
   } catch (e) {

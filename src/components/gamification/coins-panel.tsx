@@ -2,7 +2,9 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { Award, Coins, Flame, Gift, Trophy } from "lucide-react";
+import { BadgesGallery } from "@/components/gamification/badges-gallery";
 import { formatPersianNumber } from "@/lib/utils";
+import type { BadgeView } from "@/types";
 
 interface Me {
   balance: number;
@@ -10,6 +12,7 @@ interface Me {
   level: number;
   streakDays: number;
   weeklyCoins: number;
+  badges: BadgeView[];
 }
 interface LbRow {
   rank: number;
@@ -29,29 +32,41 @@ interface Reward {
 
 const MEDALS = ["🥇", "🥈", "🥉"];
 
+const PERIODS: Array<{ key: "day" | "week" | "month"; label: string }> = [
+  { key: "day", label: "روز" },
+  { key: "week", label: "هفته" },
+  { key: "month", label: "ماه" },
+];
+
+const PERIOD_TITLE: Record<string, string> = { day: "برترین‌های امروز", week: "برترین‌های هفته", month: "برترین‌های ماه" };
+
 export function CoinsPanel({ refreshKey }: { refreshKey: number }) {
   const [me, setMe] = useState<Me | null>(null);
   const [rows, setRows] = useState<LbRow[]>([]);
   const [rewards, setRewards] = useState<Reward[]>([]);
+  const [period, setPeriod] = useState<"day" | "week" | "month">("week");
   const [msg, setMsg] = useState("");
   const [busy, setBusy] = useState(false);
 
-  const load = useCallback(async () => {
-    try {
-      const [m, l, r] = await Promise.all([
-        fetch("/api/gamification/me", { cache: "no-store" }),
-        fetch("/api/gamification/leaderboard", { cache: "no-store" }),
-        fetch("/api/admin/rewards", { cache: "no-store" }),
-      ]);
-      if (m.ok) setMe(await m.json());
-      if (l.ok) setRows((await l.json()).slice(0, 5));
-      if (r.ok) setRewards((await r.json()).filter((x: Reward) => x.active));
-    } catch {}
-  }, []);
+  const load = useCallback(
+    async (p: "day" | "week" | "month") => {
+      try {
+        const [m, l, r] = await Promise.all([
+          fetch("/api/gamification/me", { cache: "no-store" }),
+          fetch(`/api/gamification/leaderboard?period=${p}`, { cache: "no-store" }),
+          fetch("/api/admin/rewards", { cache: "no-store" }),
+        ]);
+        if (m.ok) setMe(await m.json());
+        if (l.ok) setRows((await l.json()).slice(0, 5));
+        if (r.ok) setRewards((await r.json()).filter((x: Reward) => x.active));
+      } catch {}
+    },
+    [],
+  );
 
   useEffect(() => {
-    load();
-  }, [load, refreshKey]);
+    queueMicrotask(() => void load(period));
+  }, [load, period, refreshKey]);
 
   async function redeem(id: string, name: string) {
     if (busy) return;
@@ -64,7 +79,7 @@ export function CoinsPanel({ refreshKey }: { refreshKey: number }) {
       });
       const d = await res.json();
       setMsg(res.ok ? `🎉 «${name}» دریافت شد!` : d.error ?? "دریافت ناموفق بود");
-      load();
+      load(period);
     } catch {
       setMsg("ارتباط برقرار نشد");
     } finally {
@@ -117,17 +132,40 @@ export function CoinsPanel({ refreshKey }: { refreshKey: number }) {
         </div>
       </div>
 
+      <BadgesGallery badges={me.badges ?? []} />
+
       {rows.length > 0 && (
         <div>
-          <h3 className="mb-2 flex items-center gap-1.5 text-xs font-bold" style={{ color: "var(--muted)" }}>
-            <Trophy className="size-4" aria-hidden /> برترین‌های هفته
-          </h3>
+          <div className="mb-2 flex items-center justify-between gap-2">
+            <h3 className="flex items-center gap-1.5 text-xs font-bold" style={{ color: "var(--muted)" }}>
+              <Trophy className="size-4" aria-hidden /> {PERIOD_TITLE[period]}
+            </h3>
+            <div className="flex gap-0.5 rounded-lg p-0.5" style={{ background: "rgba(148,163,184,.1)" }}>
+              {PERIODS.map((p) => (
+                <button
+                  key={p.key}
+                  onClick={() => setPeriod(p.key)}
+                  aria-pressed={period === p.key}
+                  className={`rounded-md px-2 py-1 text-[11px] font-bold transition ${
+                    period === p.key ? "text-white" : ""
+                  }`}
+                  style={period === p.key ? { background: "var(--break)" } : { color: "var(--muted)" }}
+                >
+                  {p.label}
+                </button>
+              ))}
+            </div>
+          </div>
           <ol className="flex flex-col gap-1.5">
             {rows.map((r) => (
               <li key={r.userId} className="flex items-center justify-between rounded-xl px-3 py-2 text-sm" style={{ background: "rgba(148,163,184,.08)" }}>
                 <span className="flex items-center gap-2">
                   <span>{MEDALS[r.rank - 1] ?? `${formatPersianNumber(r.rank)}.`}</span>
                   <span className="font-medium">{r.name}</span>
+                  <span className="flex items-center gap-0.5 text-[11px]" style={{ color: "var(--danger)" }}>
+                    <Flame className="size-3" aria-hidden />
+                    {formatPersianNumber(r.streakDays)}
+                  </span>
                 </span>
                 <bdi className="flex items-center gap-1 font-bold tabular-nums">
                   <Coins className="size-3.5" style={{ color: "var(--warning)" }} aria-hidden />

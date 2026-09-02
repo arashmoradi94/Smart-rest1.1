@@ -38,12 +38,13 @@ export function countConcurrentBreaks(
   return slots.filter((s) => overlaps(s.scheduledStart, s.scheduledEnd, windowStart, windowEnd)).length;
 }
 
-export function formatPersianTime(date: Date | string): string {
+export function formatPersianTime(date: Date | string, timeZone?: string): string {
   const d = typeof date === "string" ? new Date(date) : date;
   return new Intl.DateTimeFormat("fa-IR", {
     hour: "2-digit",
     minute: "2-digit",
     hour12: false,
+    ...(timeZone ? { timeZone } : {}),
   }).format(d);
 }
 

@@ -1,18 +1,27 @@
-import { requireAdmin } from "@/lib/auth";
-import { errorResponse } from "@/lib/api";
-import { AppError } from "@/lib/utils";
+import { requireSupervisor } from "@/lib/auth";
+import { errorResponse, limit, readJson } from "@/lib/api";
+import { validate, announcementSchema } from "@/lib/validators";
+import { createAnnouncement, listForAdmin } from "@/services/announcement-service";
+
+export async function GET(request: Request) {
+  try {
+    const admin = await requireSupervisor();
+    limit(request, admin.id, "read");
+    return Response.json(await listForAdmin());
+  } catch (e) {
+    return errorResponse(e);
+  }
+}
 
 export async function POST(request: Request) {
   try {
-    const admin = await requireAdmin();
-    const { message } = await request.json();
-    if (!message?.trim()) throw new AppError("متن اطلاعیه الزامی است");
-    const { prisma } = await import("@/lib/db");
-    const { logAudit } = await import("@/lib/audit");
-    // Store as key-value in Settings table via dedicated Announcement model-less approach:
-    // reuse AuditLog latest announcement as source for employees (simple + already audited)
-    await logAudit(admin.id, "ANNOUNCEMENT", message.trim().slice(0, 500));
-    return Response.json({ ok: true });
+    const admin = await requireSupervisor();
+    limit(request, admin.id, "write");
+    const { message, targetUserIds } = validate(
+      announcementSchema,
+      await readJson(request),
+    );
+    return Response.json(await createAnnouncement(admin.id, message, targetUserIds ?? []));
   } catch (e) {
     return errorResponse(e);
   }

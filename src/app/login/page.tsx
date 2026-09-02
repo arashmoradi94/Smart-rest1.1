@@ -2,9 +2,11 @@
 
 import { useState } from "react";
 import { signIn } from "next-auth/react";
+import { useRouter } from "next/navigation";
 import { Coffee, KeyRound, Loader2, LogIn, User } from "lucide-react";
 
 export default function LoginPage() {
+  const router = useRouter();
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
@@ -24,7 +26,9 @@ export default function LoginPage() {
       if (res?.error) {
         setError("نام کاربری یا رمز عبور اشتباه است");
       } else {
-        window.location.href = "/";
+        // Full navigation so the SW-cached shell refreshes with the new session.
+        router.replace("/");
+        router.refresh();
       }
     } catch {
       setError("خطای ارتباط با سرور. اتصال اینترنت را بررسی کنید.");
