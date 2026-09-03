@@ -80,19 +80,19 @@ export async function sendBuddyRequest(requesterId: string, addresseeId: string)
     prisma.user.findUnique({ where: { id: addresseeId } }),
   ]);
   if (!target) throw new AppError("کاربر مورد نظر یافت نشد", 404);
-  if (target.role !== "EMPLOYEE") throw new AppError("فقط کارکنان می‌توانند Buddy شوند", 400);
+  if (target.role !== "EMPLOYEE") throw new AppError("فقط کارکنان می‌توانند هم‌شیفت شوند", 400);
 
   const [myLinks, theirLinks] = await Promise.all([
     prisma.buddyLink.count({ where: { OR: [{ aId: requesterId }, { bId: requesterId }] } }),
     prisma.buddyLink.count({ where: { OR: [{ aId: addresseeId }, { bId: addresseeId }] } }),
   ]);
   if (myLinks >= MAX_BUDDIES) throw new AppError("حداکثر ۲ هم‌شیفتی می‌توانید داشته باشید", 409);
-  if (theirLinks + 1 > MAX_BUDDIES) throw new AppError("ظرفیت Buddy طرف مقابل تکمیل است", 409);
+  if (theirLinks + 1 > MAX_BUDDIES) throw new AppError("ظرفیت هم‌شیفتی طرف مقابل تکمیل است", 409);
 
   const already = await prisma.buddyLink.findFirst({
     where: { OR: [{ aId: requesterId, bId: addresseeId }, { aId: addresseeId, bId: requesterId }] },
   });
-  if (already) throw new AppError("از قبل Buddy هستید", 409);
+  if (already) throw new AppError("شما از قبل هم‌شیفت هستید", 409);
 
   const pending = await prisma.buddyRequest.findMany({
     where: { status: "PENDING", OR: [{ requesterId, addresseeId }, { requesterId: addresseeId, addresseeId: requesterId }] },
@@ -105,7 +105,7 @@ export async function sendBuddyRequest(requesterId: string, addresseeId: string)
   publishUserState(addresseeId, "buddy-request");
   const { sendPushToUser } = await import("@/lib/push");
   sendPushToUser(addresseeId, {
-    title: "🤝 درخواست Buddy",
+    title: "🤝 درخواست هم‌شیفتی",
     body: "درخواست هم‌شیفتی جدید دارید.",
     tag: "buddy-request",
     kind: "announcement",
@@ -142,7 +142,7 @@ export async function respondBuddyRequest(userId: string, requestId: string, acc
       data: { status: "ACCEPTED", respondedAt: new Date() },
     });
     await tx.buddyLink.create({ data: { aId, bId } }).catch(() => {
-      throw new AppError("این Buddy از قبل وجود دارد", 409);
+      throw new AppError("این هم‌شیفتی از قبل وجود دارد", 409);
     });
   });
   publishStates([req.requesterId, userId]);
@@ -150,7 +150,7 @@ export async function respondBuddyRequest(userId: string, requestId: string, acc
   await logAudit(userId, "BUDDY_RESPONSE", `accepted request:${requestId}`);
   const { sendPushToUser } = await import("@/lib/push");
   sendPushToUser(req.requesterId, {
-    title: "🤝 Buddy تأیید شد",
+    title: "🤝 هم‌شیفتی تأیید شد",
     body: "درخواست هم‌شیفتی شما تأیید شد.",
     tag: "buddy-accept",
     kind: "achievement",
@@ -175,7 +175,7 @@ export async function removeBuddy(userId: string, buddyId: string) {
   const link = await prisma.buddyLink.findUnique({
     where: { aId_bId: { aId, bId } },
   });
-  if (!link) throw new AppError("این Buddy وجود ندارد", 404);
+  if (!link) throw new AppError("این هم‌شیفتی وجود ندارد", 404);
   await prisma.buddyLink.delete({ where: { id: link.id } });
   const { logAudit } = await import("@/lib/audit");
   await logAudit(userId, "BUDDY_REMOVE", `removed:${buddyId}`);
@@ -192,7 +192,7 @@ export async function adminSetBuddy(adminId: string, userId: string, buddyId: st
     const countA = await prisma.buddyLink.count({ where: { OR: [{ aId: userId }, { bId: userId }] } });
     const countB = await prisma.buddyLink.count({ where: { OR: [{ aId: buddyId }, { bId: buddyId }] } });
     if (countA >= MAX_BUDDIES || countB >= MAX_BUDDIES) {
-      throw new AppError("ظرفیت Buddy یکی از کاربران تکمیل است", 409);
+      throw new AppError("ظرفیت هم‌شیفتی یکی از کاربران تکمیل است", 409);
     }
     await prisma.buddyLink.upsert({
       where: { aId_bId: { aId, bId } },
@@ -257,7 +257,7 @@ export async function readyForGroupBreak(userId: string, now = new Date()) {
       : null;
     if (buddyGroup) {
       if (buddyGroup.members.length >= MAX_GROUP) {
-        throw new AppError("ظرفیت گروه Buddy تکمیل است", 409);
+        throw new AppError("ظرفیت گروه هم‌شیفتی تکمیل است", 409);
       }
       group = buddyGroup;
       await prisma.groupBreakMember.create({

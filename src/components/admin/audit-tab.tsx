@@ -14,9 +14,9 @@ const ACTION_LABEL: Record<string, { label: string; tone: "ok" | "warn" | "dange
   EXTEND_BREAK: { label: "تمدید استراحت", tone: "warn" },
   CANCEL_BREAK: { label: "لغو استراحت", tone: "danger" },
   LEAVE_GROUP: { label: "خروج از گروه", tone: "info" },
-  OVERRIDE_BREAK_START: { label: "Override: شروع استراحت", tone: "warn" },
-  OVERRIDE_BREAK_RETURN: { label: "Override: بازگشت", tone: "warn" },
-  OVERRIDE_END_SHIFT: { label: "Override: پایان شیفت", tone: "danger" },
+  OVERRIDE_BREAK_START: { label: "شروع استراحت مدیریتی", tone: "warn" },
+  OVERRIDE_BREAK_RETURN: { label: "بازگشت مدیریتی", tone: "warn" },
+  OVERRIDE_END_SHIFT: { label: "پایان شیفت مدیریتی", tone: "danger" },
   UPDATE_SETTINGS: { label: "تغییر تنظیمات", tone: "warn" },
   CREATE_USER: { label: "ایجاد کاربر", tone: "info" },
   DELETE_USER: { label: "حذف کاربر", tone: "danger" },
@@ -28,15 +28,15 @@ const ACTION_LABEL: Record<string, { label: string; tone: "ok" | "warn" | "dange
   ENABLE_REWARD: { label: "فعال‌سازی پاداش", tone: "info" },
   DISABLE_REWARD: { label: "غیرفعال‌سازی پاداش", tone: "warn" },
   ANNOUNCEMENT: { label: "اطلاعیه", tone: "info" },
-  BUDDY_REQUEST: { label: "درخواست Buddy", tone: "info" },
-  BUDDY_RESPONSE: { label: "پاسخ Buddy", tone: "info" },
-  BUDDY_REMOVE: { label: "حذف Buddy", tone: "info" },
-  ADMIN_SYNC_BUDDY: { label: "Buddy اجباری", tone: "warn" },
-  ADMIN_UNSYNC_BUDDY: { label: "حذف Buddy اجباری", tone: "warn" },
+  BUDDY_REQUEST: { label: "درخواست هم‌شیفتی", tone: "info" },
+  BUDDY_RESPONSE: { label: "پاسخ هم‌شیفتی", tone: "info" },
+  BUDDY_REMOVE: { label: "حذف هم‌شیفتی", tone: "info" },
+  ADMIN_SYNC_BUDDY: { label: "هم‌شیفتی اجباری", tone: "warn" },
+  ADMIN_UNSYNC_BUDDY: { label: "حذف هم‌شیفتی اجباری", tone: "warn" },
   TOGGLE_CALL_STATUS: { label: "وضعیت تماس", tone: "info" },
   SET_CALL_STATUS: { label: "وضعیت تماس (مدیر)", tone: "warn" },
-  PUSH_SUBSCRIBE: { label: "اشتراک نوتیف", tone: "info" },
-  PUSH_UNSUBSCRIBE: { label: "لغو اشتراک نوتیف", tone: "info" },
+  PUSH_SUBSCRIBE: { label: "اشتراک اعلان", tone: "info" },
+  PUSH_UNSUBSCRIBE: { label: "لغو اشتراک اعلان", tone: "info" },
   LOGIN_FAILED: { label: "ورود ناموفق", tone: "danger" },
 };
 
@@ -90,7 +90,7 @@ export function AuditTab() {
       <div className="flex items-center justify-between gap-2">
         <h2 className="flex items-center gap-1.5 text-sm font-bold">
           <ScrollText className="size-4" aria-hidden />
-          گزارش رخدادها (Audit Log)
+          گزارش رخدادها
         </h2>
         <button
           onClick={load}

@@ -32,8 +32,10 @@
   left: max(1rem, env(safe-area-inset-left));
   right: max(1rem, env(safe-area-inset-right));
   display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
+  flex-direction: row;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
   width: auto;
   max-width: 28rem;
   margin-inline: auto;
@@ -44,11 +46,41 @@
   box-shadow: 0 12px 32px rgba(15, 23, 42, 0.18);
   backdrop-filter: blur(14px);
   animation: notification-in 220ms ease-out;
+  user-select: none;
+  cursor: grab;
+  will-change: transform;
+}
+
+.notification-toast:active {
+  cursor: grabbing;
+}
+
+.notification-toast-content {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 0.25rem;
 }
 
 .notification-toast span {
   color: var(--muted);
   font-size: 0.875rem;
+}
+
+.notification-close {
+  display: flex;
+  flex: 0 0 auto;
+  width: 1.5rem;
+  height: 1.5rem;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 999px;
+  color: var(--muted);
+  background: rgba(100, 116, 139, 0.1);
+  font-size: 1.25rem;
+  line-height: 1;
+  cursor: pointer;
 }
 
 @keyframes notification-in {

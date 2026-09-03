@@ -3,13 +3,13 @@ import "./globals.css";
 import { Providers } from "@/components/providers";
 
 export const metadata: Metadata = {
-  title: "مدیریت استراحت کال‌سنتر",
+  title: "مدیریت استراحت مرکز تماس",
   description: "تو فقط کارت رو انجام بده؛ ما حواسمون به زمان استراحتت هست.",
   manifest: "/manifest.webmanifest",
   appleWebApp: {
     capable: true,
     statusBarStyle: "default",
-    title: "استراحت کال‌سنتر",
+    title: "استراحت مرکز تماس",
   },
 };
 

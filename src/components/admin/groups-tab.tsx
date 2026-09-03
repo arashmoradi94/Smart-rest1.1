@@ -64,7 +64,7 @@ export function GroupsTab({ timezone }: { timezone?: string }) {
       <div className="glass-card flex items-center justify-between rounded-2xl px-4 py-3 text-xs">
         <span className="flex items-center gap-1.5 font-bold">
           <UsersRound className="size-4" aria-hidden />
-          Group Break Monitor
+          پایش استراحت گروهی
         </span>
         <span className="flex items-center gap-2" style={{ color: "var(--muted)" }}>
           <span>

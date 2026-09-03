@@ -292,7 +292,7 @@ export function EmployeeDashboard({ userName }: { userName: string }) {
         <div>
           <h1 className="text-sm font-bold">{userName} عزیز، خوش آمدی 👋</h1>
           <p className="text-xs" style={{ color: "var(--muted)" }}>
-            مدیریت استراحت کال‌سنتر
+            مدیریت استراحت مرکز تماس
           </p>
         </div>
         <div className="flex gap-2">

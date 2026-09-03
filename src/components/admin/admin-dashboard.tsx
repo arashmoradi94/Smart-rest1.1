@@ -43,7 +43,7 @@ const SETTING_FIELDS: Array<{ key: keyof FullSettings; label: string; min: numbe
   { key: "maxConcurrentBreaks", label: "حداکثر استراحت همزمان", min: 1 },
   { key: "earlyNotificationMinutes", label: "اعلان قبل از استراحت (دقیقه)", min: 1 },
   { key: "endNotificationMinutes", label: "هشدار پایان استراحت (دقیقه)", min: 1 },
-  { key: "groupSuggestWindowMinutes", label: "پنجره پیشنهاد Buddy (دقیقه)", min: 3 },
+  { key: "groupSuggestWindowMinutes", label: "پنجره پیشنهاد هم‌شیفتی (دقیقه)", min: 3 },
 ];
 
 function fmt(iso?: string, timeZone?: string): string {
@@ -393,7 +393,7 @@ export function AdminDashboard({ adminName }: { adminName: string }) {
                               className="flex size-8 items-center justify-center rounded-lg text-white disabled:opacity-50"
                               style={{ background: "var(--break)" }}
                               aria-label={`شروع استراحت ${emp.name}`}
-                              title="Override: شروع استراحت"
+                              title="شروع استراحت"
                             >
                               <Coffee className="size-4" aria-hidden />
                             </button>
@@ -406,7 +406,7 @@ export function AdminDashboard({ adminName }: { adminName: string }) {
                                 className="flex size-8 items-center justify-center rounded-lg text-white disabled:opacity-50"
                                 style={{ background: "var(--working)" }}
                                 aria-label={`بازگشت به کار ${emp.name}`}
-                                title="Override: بازگشت به کار"
+                                title="بازگشت به کار"
                               >
                                 <Briefcase className="size-4" aria-hidden />
                               </button>
@@ -429,7 +429,7 @@ export function AdminDashboard({ adminName }: { adminName: string }) {
                             disabled={busy || emp.status === "OFFLINE"}
                             className="rounded-lg px-2 py-1.5 text-xs font-bold disabled:opacity-50"
                             style={{ background: "rgba(239,68,68,.1)", color: "var(--danger)" }}
-                            title="Override: پایان شیفت"
+                            title="پایان شیفت مدیریتی"
                           >
                             پایان
                           </button>
@@ -446,11 +446,11 @@ export function AdminDashboard({ adminName }: { adminName: string }) {
                           <dd className="font-bold tabular-nums">{fmt(emp.shiftEndedAt, state.timezone)}</dd>
                         </div>
                         <div>
-                          <dt style={{ color: "var(--muted)" }}>Break بعدی</dt>
+                          <dt style={{ color: "var(--muted)" }}>استراحت بعدی</dt>
                           <dd className="font-bold tabular-nums">{fmt(emp.nextBreakAt, state.timezone)}</dd>
                         </div>
                         <div>
-                          <dt style={{ color: "var(--muted)" }}>Countdown</dt>
+                          <dt style={{ color: "var(--muted)" }}>شمارش معکوس</dt>
                           <dd className="font-bold tabular-nums" dir="ltr">
                             {emp.countdownSeconds > 0 ? fmtCountdown(emp.countdownSeconds) : "—"}
                           </dd>
@@ -458,17 +458,17 @@ export function AdminDashboard({ adminName }: { adminName: string }) {
                         {emp.currentBreak && (
                           <>
                             <div>
-                              <dt style={{ color: "var(--muted)" }}>شروع Break (واقعی)</dt>
+                              <dt style={{ color: "var(--muted)" }}>شروع استراحت (واقعی)</dt>
                               <dd className="font-bold tabular-nums">{fmt(emp.currentBreak.actualStart, state.timezone)}</dd>
                             </div>
                             <div>
-                              <dt style={{ color: "var(--muted)" }}>پایان Break</dt>
+                              <dt style={{ color: "var(--muted)" }}>پایان استراحت</dt>
                               <dd className="font-bold tabular-nums">{fmt(emp.currentBreak.endsAt, state.timezone)}</dd>
                             </div>
                           </>
                         )}
                         <div>
-                          <dt style={{ color: "var(--muted)" }}>مجموع Break</dt>
+                          <dt style={{ color: "var(--muted)" }}>مجموع استراحت</dt>
                           <dd className="font-bold">
                             {formatPersianNumber(emp.breakCount)} بار / {formatPersianNumber(emp.totalBreakMinutes)} دقیقه
                           </dd>
@@ -480,7 +480,7 @@ export function AdminDashboard({ adminName }: { adminName: string }) {
                           </dd>
                         </div>
                         <div className="col-span-2">
-                          <dt style={{ color: "var(--muted)" }}>Buddy</dt>
+                          <dt style={{ color: "var(--muted)" }}>هم‌شیفتی</dt>
                           <dd className="font-bold">{buddyNames(emp.buddies)}</dd>
                         </div>
                       </dl>
@@ -558,7 +558,7 @@ export function AdminDashboard({ adminName }: { adminName: string }) {
               </label>
 
               <div className="flex flex-col gap-3 rounded-2xl p-3" style={{ background: "rgba(99,102,241,.06)" }}>
-                <h3 className="text-sm font-bold">Smart Break Buddy</h3>
+                <h3 className="text-sm font-bold">هم‌شیفتی هوشمند</h3>
                 <label className="flex items-center justify-between gap-3 text-sm font-medium">
                   استراحت گروهی فعال باشد؟
                   <button

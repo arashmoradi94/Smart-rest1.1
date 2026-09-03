@@ -47,7 +47,7 @@ export default function LoginPage() {
           >
             <Coffee className="size-8" aria-hidden />
           </div>
-          <h1 className="text-xl font-bold">مدیریت استراحت کال‌سنتر</h1>
+          <h1 className="text-xl font-bold">مدیریت استراحت مرکز تماس</h1>
           <p className="text-sm" style={{ color: "var(--muted)" }}>
             تو فقط کارت رو انجام بده؛ حواسمون به زمان استراحتت هست.
           </p>

@@ -1,11 +1,13 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 export const NOTIFICATION_DURATION = 5000;
 export const NOTIFICATION_VOLUME = 0.30;
+const currentTime = () => Date.now();
 
 export type NotificationKind = "break-start" | "break-end" | "reminder" | "achievement" | "announcement";
 interface InAppNotification {
+  id: string;
   title: string;
   body: string;
   kind: NotificationKind;
@@ -131,10 +133,15 @@ export function PushSetup() {
   const [permission, setPermission] = useState<NotificationPermission>(() =>
     typeof Notification !== "undefined" ? Notification.permission : "default",
   );
-  const [toast, setToast] = useState<InAppNotification | null>(null);
+  const [toasts, setToasts] = useState<InAppNotification[]>([]);
+  const [drag, setDrag] = useState<{ id: string; x: number } | null>(null);
+  const [closing, setClosing] = useState<Set<string>>(new Set());
+  const dragStart = useRef<{ id: string; x: number } | null>(null);
+  const timers = useRef(new Map<string, { timeout: number; startedAt: number; remaining: number }>());
 
   useEffect(() => {
-    const listener = (notification: InAppNotification) => setToast(notification);
+    const listener = (notification: InAppNotification) =>
+      setToasts((current) => [...current.filter((item) => item.id !== notification.id), notification]);
     inAppListeners.add(listener);
     return () => {
       inAppListeners.delete(listener);
@@ -142,10 +149,92 @@ export function PushSetup() {
   }, []);
 
   useEffect(() => {
-    if (!toast) return;
-    const timeout = window.setTimeout(() => setToast(null), NOTIFICATION_DURATION);
-    return () => window.clearTimeout(timeout);
-  }, [toast]);
+    const activeIds = new Set(toasts.map((toast) => toast.id));
+    for (const [id, timer] of timers.current) {
+      if (!activeIds.has(id)) {
+        window.clearTimeout(timer.timeout);
+        timers.current.delete(id);
+      }
+    }
+    for (const toast of toasts) {
+      if (timers.current.has(toast.id)) continue;
+      const start = currentTime();
+      const timeout = window.setTimeout(() => {
+        timers.current.delete(toast.id);
+        setToasts((current) => current.filter((item) => item.id !== toast.id));
+      }, NOTIFICATION_DURATION);
+      timers.current.set(toast.id, {
+        timeout,
+        startedAt: start,
+        remaining: NOTIFICATION_DURATION,
+      });
+    }
+  }, [toasts]);
+
+  useEffect(() => () => {
+    for (const timer of timers.current.values()) window.clearTimeout(timer.timeout);
+    timers.current.clear();
+  }, []);
+
+  function dismiss(id: string) {
+    const timer = timers.current.get(id);
+    if (timer) {
+      window.clearTimeout(timer.timeout);
+      timers.current.delete(id);
+    }
+    setClosing((current) => new Set(current).add(id));
+    window.setTimeout(() => {
+      setToasts((current) => current.filter((item) => item.id !== id));
+      setClosing((current) => {
+        const next = new Set(current);
+        next.delete(id);
+        return next;
+      });
+    }, 180);
+    setDrag(null);
+  }
+
+  function pause(id: string) {
+    const timer = timers.current.get(id);
+    if (!timer) return;
+    window.clearTimeout(timer.timeout);
+    timer.remaining = Math.max(0, timer.remaining - (currentTime() - timer.startedAt));
+  }
+
+  function resume(id: string) {
+    const timer = timers.current.get(id);
+    if (!timer || timer.remaining <= 0) {
+      if (timer) dismiss(id);
+      return;
+    }
+    timer.startedAt = currentTime();
+    timer.timeout = window.setTimeout(() => {
+      timers.current.delete(id);
+      setToasts((current) => current.filter((item) => item.id !== id));
+    }, timer.remaining);
+  }
+
+  function pointerDown(event: React.PointerEvent<HTMLDivElement>, id: string) {
+    dragStart.current = { id, x: event.clientX };
+    event.currentTarget.setPointerCapture(event.pointerId);
+  }
+
+  function pointerMove(event: React.PointerEvent<HTMLDivElement>) {
+    if (!dragStart.current) return;
+    setDrag({ id: dragStart.current.id, x: event.clientX - dragStart.current.x });
+  }
+
+  function pointerUp(event: React.PointerEvent<HTMLDivElement>) {
+    if (!dragStart.current) return;
+    const { id } = dragStart.current;
+    const offset = event.clientX - dragStart.current.x;
+    dragStart.current = null;
+    if (Math.abs(offset) >= 90) dismiss(id);
+    else {
+      setDrag(null);
+      resume(id);
+    }
+  }
 
   async function enableNotifications() {
     const granted = await requestNotificationPermission();
@@ -157,12 +246,42 @@ export function PushSetup() {
 
   return (
     <>
-      {toast && (
-        <div className="notification-toast" role="status" aria-live="polite">
-          <strong>{toast.title}</strong>
-          <span>{toast.body}</span>
+      {toasts.map((toast) => (
+        <div
+          key={toast.id}
+          className="notification-toast"
+          role="status"
+          aria-live="polite"
+          onPointerDown={(event) => pointerDown(event, toast.id)}
+          onPointerMove={pointerMove}
+          onPointerUp={pointerUp}
+          onPointerEnter={() => pause(toast.id)}
+          onPointerLeave={() => {
+            if (!dragStart.current) resume(toast.id);
+          }}
+          onPointerCancel={() => {
+            dragStart.current = null;
+            resume(toast.id);
+            setDrag(null);
+          }}
+          style={{
+            transform: closing.has(toast.id)
+              ? `translateX(${drag?.id === toast.id && drag.x < 0 ? -120 : 120}%)`
+              : `translateX(${drag?.id === toast.id ? drag.x : 0}px)`,
+            opacity: closing.has(toast.id) ? 0 : 1,
+            transition: drag?.id === toast.id && !closing.has(toast.id) ? "none" : "transform 180ms ease-out, opacity 180ms ease-out",
+            touchAction: "pan-y",
+          }}
+        >
+          <div className="notification-toast-content">
+            <strong>{toast.title}</strong>
+            <span>{toast.body}</span>
+          </div>
+          <button type="button" className="notification-close" onClick={() => dismiss(toast.id)} aria-label="بستن اعلان">
+            ×
+          </button>
         </div>
-      )}
+      ))}
       {permission !== "granted" && (
         <div className="glass-card flex items-center justify-between gap-3 rounded-2xl px-4 py-3 text-sm" role="status">
           <span>
@@ -188,7 +307,7 @@ export function PushSetup() {
 export async function notify(title: string, body: string, tag?: string, kind?: NotificationKind) {
   try {
     const notificationKind = getNotificationKind(tag, kind);
-    publishInAppNotification({ title, body, kind: notificationKind });
+    publishInAppNotification({ id: tag ?? `${Date.now()}-${Math.random()}`, title, body, kind: notificationKind });
     vibrateNotification(notificationKind);
     playNotificationSound(notificationKind);
     if (

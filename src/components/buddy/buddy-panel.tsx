@@ -104,7 +104,7 @@ export function BuddyPanel({
     <section className="glass-card flex flex-col gap-3 rounded-3xl p-5">
       <h2 className="flex items-center gap-1.5 text-sm font-bold">
         <Handshake className="size-4" aria-hidden />
-        هم‌شیفتی‌ها (Buddy)
+        هم‌شیفتی‌ها
       </h2>
 
       {/* Incoming requests */}
@@ -237,8 +237,8 @@ export function BuddyPanel({
                       disabled={busy}
                       className="flex size-7 items-center justify-center rounded-lg text-white disabled:opacity-50"
                       style={{ background: "var(--break)" }}
-                      aria-label={`ارسال درخواست Buddy به ${m.name}`}
-                      title="ارسال درخواست Buddy"
+                      aria-label={`ارسال درخواست هم‌شیفتی به ${m.name}`}
+                      title="ارسال درخواست هم‌شیفتی"
                     >
                       <UserPlus className="size-3.5" aria-hidden />
                     </button>
@@ -305,7 +305,7 @@ export function BuddyPanel({
           className="rounded-xl py-2.5 text-sm font-bold"
           style={{ background: "rgba(99,102,241,.1)", color: "var(--break)" }}
         >
-          ☕ استراحت گروهی با Buddy
+          ☕ استراحت گروهی با هم‌شیفتی
         </button>
       )}
 

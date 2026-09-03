@@ -113,10 +113,10 @@ export function ReportsTab() {
           disabled={!data}
           className="flex items-center gap-1.5 rounded-xl px-3 py-2 text-xs font-bold disabled:opacity-50"
           style={{ background: "rgba(100,116,139,.1)", color: "var(--muted)" }}
-          aria-label="خروجی CSV"
+          aria-label="دریافت گزارش"
         >
           <Download className="size-4" aria-hidden />
-          CSV
+          دریافت گزارش
         </button>
       </div>
 

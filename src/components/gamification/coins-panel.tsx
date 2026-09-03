@@ -106,7 +106,7 @@ export function CoinsPanel({ refreshKey }: { refreshKey: number }) {
         </div>
         <div className="rounded-xl p-3 text-center" style={{ background: "rgba(148,163,184,.08)" }}>
           <p className="text-lg font-bold" style={{ color: "var(--working)" }}>{formatPersianNumber(me.xp)}</p>
-          <p className="text-xs" style={{ color: "var(--muted)" }}>XP</p>
+          <p className="text-xs" style={{ color: "var(--muted)" }}>امتیاز تجربه</p>
         </div>
         <div className="rounded-xl p-3 text-center" style={{ background: "rgba(148,163,184,.08)" }}>
           <p className="flex items-center justify-center gap-1 text-lg font-bold" style={{ color: "var(--danger)" }}>

@@ -61,7 +61,7 @@ export async function startBreak(userId: string, now = new Date(), opts?: { forc
   if (open.groupBreakId && !opts?.force) {
     const group = await prisma.groupBreak.findUnique({ where: { id: open.groupBreakId } });
     if (group?.status === "FORMING" || group?.status === "DELAYED") {
-      throw new AppError("استراحت شما با گروه Buddy هماهنگ است؛ از پنل گروه استفاده کنید", 409);
+      throw new AppError("استراحت شما با گروه هم‌شیفتی هماهنگ است؛ از پنل گروه استفاده کنید", 409);
     }
   }
 
