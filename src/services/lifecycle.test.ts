@@ -355,7 +355,7 @@ describe("Buddy system + group break sync", () => {
     expect(groups.length).toBeGreaterThanOrEqual(1);
   });
 
-  it("on-call member keeps the group waiting; nobody's break is lost", async () => {
+  it("on-call member cannot start a group break until the call ends", async () => {
     // isolate: u1 is linked only to u3 for this scenario
     await db.prisma.buddyLink.deleteMany({});
     const [a, b] = ids.u1 < ids.u3 ? [ids.u1, ids.u3] : [ids.u3, ids.u1];
@@ -363,12 +363,10 @@ describe("Buddy system + group break sync", () => {
     await db.prisma.user.update({ where: { id: ids.u3 }, data: { onCall: true, status: "WORKING" } });
     const H0 = new Date("2026-08-24T12:00:00.000Z");
     await shiftSvc.startShift(ids.u3, H0);
-    // u1 readies; u3 is flagged on-call → group keeps waiting
+    // u1 readies; an on-call member cannot start the group
     const r1 = await buddySvc.readyForGroupBreak(ids.u1, at(H0, 61));
     expect(r1.started).toBe(false);
-    const r3 = await buddySvc.readyForGroupBreak(ids.u3, at(H0, 62));
-    expect(r3.started).toBe(false);
-    expect(r3.waitingOnCall).toBe(true);
+    await expect(buddySvc.readyForGroupBreak(ids.u3, at(H0, 62))).rejects.toMatchObject({ status: 409 });
     // waiting member sees WAITING_BUDDY while the group is forming
     const waiting = await stateSvc.getEmployeeState(ids.u1, at(H0, 63));
     expect(waiting.userStatus).toBe("WAITING_BUDDY");

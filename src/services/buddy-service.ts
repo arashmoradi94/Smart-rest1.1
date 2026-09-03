@@ -6,6 +6,21 @@ import { getActiveShift } from "@/services/shift-service";
 
 const MAX_BUDDIES = 2; // each user picks at most 2 → group max 3
 const MAX_GROUP = 3;
+let groupStartTail = Promise.resolve();
+
+async function withGroupStartLock<T>(fn: () => Promise<T>): Promise<T> {
+  const previous = groupStartTail;
+  let release!: () => void;
+  groupStartTail = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  await previous;
+  try {
+    return await fn();
+  } finally {
+    release();
+  }
+}
 
 /** Normalized pair key so BuddyLink is unique regardless of direction */
 function pairKey(a: string, b: string): [string, string] {
@@ -209,6 +224,13 @@ export async function readyForGroupBreak(userId: string, now = new Date()) {
   }
   const shift = await getActiveShift(userId);
   if (!shift) throw new AppError("ابتدا شیفت خود را شروع کنید", 409);
+  const requester = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { onCall: true, status: true },
+  });
+  if (requester?.onCall || requester?.status === "ON_CALL") {
+    throw new AppError("هنگام تماس امکان شروع استراحت گروهی ندارید", 409);
+  }
 
   const myRunning = shift.breaks.find((b) => b.status === "ACTIVE" || b.status === "OVERTIME");
   if (myRunning) throw new AppError("شما هم‌اکنون در استراحت هستید", 409);
@@ -223,13 +245,13 @@ export async function readyForGroupBreak(userId: string, now = new Date()) {
   // Roster is fixed at creation; joining someone else's open group is allowed
   // only if they are a direct buddy and the group is not full.
   let group = await prisma.groupBreak.findFirst({
-    where: { status: "FORMING", members: { some: { userId } } },
+    where: { status: { in: ["FORMING", "DELAYED"] }, members: { some: { userId } } },
     include: { members: true },
   });
   if (!group) {
     const buddyGroup = buddyIds.length
       ? await prisma.groupBreak.findFirst({
-          where: { status: "FORMING", members: { some: { userId: { in: buddyIds } } } },
+          where: { status: { in: ["FORMING", "DELAYED"] }, members: { some: { userId: { in: buddyIds } } } },
           include: { members: true },
         })
       : null;
@@ -324,7 +346,7 @@ export async function readyForGroupBreak(userId: string, now = new Date()) {
   // AND stays within the team load-ratio guard. Nothing is rescheduled on a
   // block: members keep their own normal break queue and may start solo.
   const startedAt = now;
-  const results = await prisma.$transaction(async (tx) => {
+  const results = await withGroupStartLock(() => prisma.$transaction(async (tx) => {
     const activeCount = await tx.break.count({
       where: { actualStart: { not: null }, actualEnd: null },
     });
@@ -358,16 +380,21 @@ export async function readyForGroupBreak(userId: string, now = new Date()) {
         started.push(uid);
       }
     }
-    if (started.length > 0) {
-      await tx.groupBreak.update({
-        where: { id: group.id },
-        data: { status: "ACTIVE", startedAt },
-      });
+    if (started.length !== expected.length) {
+      throw new AppError("استراحت گروهی دیگر قابل شروع نیست؛ لطفاً دوباره تلاش کنید", 409);
     }
+    await tx.groupBreak.update({
+      where: { id: group.id },
+      data: { status: "ACTIVE", startedAt },
+    });
     return { blocked: null as null, started, onlineAgents };
-  });
+  }));
 
   if (results.blocked) {
+    await prisma.groupBreak.update({
+      where: { id: group.id },
+      data: { status: "DELAYED" },
+    });
     // Display-only suggestion: reuse the SAME queue primitives as the normal
     // scheduler (countConcurrentBreaks scan) so the proposal never contradicts
     // the regular break queue. Running breaks occupy their slot until the
@@ -403,6 +430,16 @@ export async function readyForGroupBreak(userId: string, now = new Date()) {
       othersScheduled: others,
       from: now,
     });
+    const { sendPushToUser } = await import("@/lib/push");
+    for (const uid of expected) {
+      sendPushToUser(uid, {
+        title: "⏳ استراحت گروهی به تعویق افتاد",
+        body: "ظرفیت فعلی کافی نیست؛ استراحت عادی شما بدون تغییر باقی می‌ماند.",
+        tag: `group-break-delayed:${group.id}`,
+        kind: "reminder",
+        url: "/dashboard",
+      }).catch(() => {});
+    }
     return {
       groupBreakId: group.id,
       started: false,
@@ -446,13 +483,13 @@ export async function readyForGroupBreak(userId: string, now = new Date()) {
 /** Poll group status while waiting or during the shared break */
 export async function getGroupBreakStatus(userId: string) {
   const group = await prisma.groupBreak.findFirst({
-    where: { status: { in: ["FORMING", "ACTIVE"] }, members: { some: { userId } } },
+    where: { status: { in: ["FORMING", "DELAYED", "ACTIVE"] }, members: { some: { userId } } },
     include: { members: true },
   });
   if (!group) return null;
   const users = await prisma.user.findMany({
     where: { id: { in: group.members.map((m) => m.userId) } },
-    select: { id: true, name: true, onCall: true },
+    select: { id: true, name: true, onCall: true, status: true },
   });
   const nameOf = Object.fromEntries(users.map((u) => [u.id, u]));
   const settings = await getSettings();
@@ -468,7 +505,7 @@ export async function getGroupBreakStatus(userId: string) {
   }));
   return {
     groupBreakId: group.id,
-    status: group.status as "FORMING" | "ACTIVE",
+    status: group.status as "FORMING" | "DELAYED" | "ACTIVE",
     endsAt,
     members,
     readyCount: members.filter((m) => m.ready).length,
@@ -485,7 +522,8 @@ export async function getBreakMatches(userId: string, now = new Date()) {
   const settings = await getSettings();
   if (!settings.groupBreakEnabled) return { enabled: false as const, windowMinutes: 0, matches: [] };
 
-  const [links, scheduled] = await Promise.all([
+  const [requester, links, scheduled] = await Promise.all([
+    prisma.user.findUnique({ where: { id: userId }, select: { status: true, onCall: true } }),
     prisma.buddyLink.findMany({ where: { OR: [{ aId: userId }, { bId: userId }] } }),
     prisma.break.findMany({
       where: {
@@ -496,9 +534,12 @@ export async function getBreakMatches(userId: string, now = new Date()) {
         shift: { status: "ACTIVE" },
       },
       orderBy: { scheduledStart: "asc" },
-      include: { user: { select: { id: true, name: true, onCall: true } } },
+      include: { user: { select: { id: true, name: true, onCall: true, status: true } } },
     }),
   ]);
+  if (!requester || requester.onCall || requester.status === "ON_CALL" || requester.status === "OFFLINE") {
+    return { enabled: true as const, windowMinutes: settings.groupSuggestWindowMinutes, matches: [] };
+  }
   const buddyIds = new Set(links.flatMap((l) => [l.aId, l.bId]));
 
   const { rankBreakMatches } = await import("@/services/smart-break-service");
@@ -508,6 +549,9 @@ export async function getBreakMatches(userId: string, now = new Date()) {
       name: b.user.name,
       isBuddy: buddyIds.has(b.userId),
       onCall: b.user.onCall,
+      ready: b.user.status === "WORKING",
+      online: true,
+      shiftCompatible: true,
       nextBreak: { scheduledStart: b.scheduledStart, scheduledEnd: b.scheduledEnd },
     })),
     now,
@@ -521,13 +565,17 @@ export async function getGroupBreakMonitor() {
   const settings = await getSettings();
   const [groups, activeBreaks, onlineAgents] = await Promise.all([
     prisma.groupBreak.findMany({
-      where: { status: { in: ["FORMING", "ACTIVE"] } },
+      where: { status: { in: ["FORMING", "DELAYED", "ACTIVE", "COMPLETED"] } },
       orderBy: { createdAt: "desc" },
       include: { members: true },
     }),
     prisma.break.count({ where: { actualStart: { not: null }, actualEnd: null } }),
     prisma.shift.count({ where: { status: "ACTIVE" } }),
   ]);
+  const groupBreaks = await prisma.break.findMany({
+    where: { groupBreakId: { in: groups.map((g) => g.id) } },
+    select: { groupBreakId: true, actualStart: true, actualEnd: true },
+  });
   const users = await prisma.user.findMany({
     where: { id: { in: groups.flatMap((g) => g.members.map((m) => m.userId)) } },
     select: { id: true, name: true, onCall: true },
@@ -550,7 +598,11 @@ export async function getGroupBreakMonitor() {
       const status =
         g.status === "ACTIVE"
           ? ("ACTIVE" as const)
-          : anyOnCall
+          : g.status === "DELAYED"
+            ? ("DELAYED" as const)
+            : g.status === "COMPLETED"
+              ? ("COMPLETED" as const)
+            : anyOnCall
             ? ("WAITING_CALL" as const)
             : readyCount === g.members.length
               ? ("READY" as const)
@@ -564,6 +616,24 @@ export async function getGroupBreakMonitor() {
             ? addMinutes(g.startedAt, settings.breakDurationMinutes).toISOString()
             : undefined,
         creatorId: g.createdById,
+        requestedAt: g.createdAt.toISOString(),
+        durationMinutes:
+          g.status === "COMPLETED"
+            ? Math.max(
+                0,
+                Math.round(
+                  (Math.max(
+                    ...groupBreaks
+                      .filter((b) => b.groupBreakId === g.id && b.actualStart && b.actualEnd)
+                      .map((b) => b.actualEnd!.getTime()),
+                    g.startedAt?.getTime() ?? g.createdAt.getTime(),
+                  ) -
+                    (g.startedAt?.getTime() ?? g.createdAt.getTime())) /
+                    60_000,
+                ),
+              )
+            : undefined,
+        capacityStatus: g.status === "DELAYED" ? "DELAYED" : g.status === "FORMING" ? "PENDING" : "APPROVED",
         members: g.members.map((m) => ({
           userId: m.userId,
           name: userOf[m.userId]?.name ?? m.userId,

@@ -70,7 +70,7 @@ export async function endShift(userId: string, now = new Date()) {
   // Any forming group containing this user must not block on them.
   await prisma.$transaction(async (tx) => {
     const memberships = await tx.groupBreakMember.findMany({
-      where: { userId, groupBreak: { status: "FORMING" } },
+      where: { userId, groupBreak: { status: { in: ["FORMING", "DELAYED"] } } },
       include: { groupBreak: true },
     });
     for (const m of memberships) {

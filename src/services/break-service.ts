@@ -59,7 +59,7 @@ export async function startBreak(userId: string, now = new Date(), opts?: { forc
   // admin force-start detaches it first.
   if (open.groupBreakId && !opts?.force) {
     const group = await prisma.groupBreak.findUnique({ where: { id: open.groupBreakId } });
-    if (group?.status === "FORMING") {
+    if (group?.status === "FORMING" || group?.status === "DELAYED") {
       throw new AppError("استراحت شما با گروه Buddy هماهنگ است؛ از پنل گروه استفاده کنید", 409);
     }
   }
@@ -217,7 +217,7 @@ export async function leaveGroup(userId: string) {
     include: { groupBreak: true },
     orderBy: { id: "desc" },
   });
-  if (!membership || membership.groupBreak.status !== "FORMING") {
+  if (!membership || !["FORMING", "DELAYED"].includes(membership.groupBreak.status)) {
     throw new AppError("گروه فعالی برای خروج وجود ندارد", 409);
   }
   const members = await prisma.groupBreakMember.count({

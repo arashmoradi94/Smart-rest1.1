@@ -92,6 +92,19 @@ describe("evaluateGroupBreak (pure decision layer)", () => {
     if (r.decision === "DELAYED") expect(r.reason).toBe("load");
   });
 
+  it("APPROVES the exact 20-online, 2-on-break, group-of-2 case", () => {
+    const r = smart.evaluateGroupBreak({
+      enabled: true,
+      groupSize: 2,
+      onlineAgents: 20,
+      onBreakCount: 2,
+      settings: BASE_SETTINGS,
+      othersScheduled: [],
+      from: new Date(),
+    });
+    expect(r).toEqual({ decision: "APPROVED" });
+  });
+
   it("DELAYS on capacity and coordinates the slot with the existing queue", () => {
     // 4 running breaks occupy [now, now+10); capacity 5 → a group of 2 can't start
     // now. Suggestion must land on the first minute they all end.
@@ -149,8 +162,8 @@ describe("rankBreakMatches (Break Matching)", () => {
       now,
       10,
     );
-    expect(r.map((m) => m.userId)).toEqual(["b", "e", "a"]);
-    expect(r[0].minutesUntilBreak).toBe(9);
+    expect(r.map((m) => m.userId)).toEqual(["e", "a", "b"]);
+    expect(r[0].minutesUntilBreak).toBe(2);
     expect(r.find((m) => m.userId === "d")).toBeUndefined();
     expect(r.find((m) => m.userId === "c")).toBeUndefined();
   });
@@ -210,6 +223,18 @@ describe("Smart group flow (integration, temp db)", () => {
     expect((res as { waitingLoad?: boolean }).waitingLoad).toBe(true);
     // With 6 online the load guard can't clear within the search window
     expect((res as { suggestedStart?: string }).suggestedStart).toBeUndefined();
+  });
+
+  it("serializes concurrent group requests without exceeding capacity", async () => {
+    await settingsSvc.updateSettings({ maxConcurrentBreaks: 5, maxGroupBreakLoadRatio: 1.0 });
+    const results = await Promise.all([
+      buddySvc.readyForGroupBreak(ids.u1, at(T0, 8)),
+      buddySvc.readyForGroupBreak(ids.ali, at(T0, 8)),
+    ]);
+    expect(results.every((result) => result.started === false)).toBe(true);
+    expect(
+      await db.prisma.break.count({ where: { actualStart: { not: null }, actualEnd: null } }),
+    ).toBe(4);
   });
 
   it("matching window: state exposes only in-window suggestions, buddies first", async () => {

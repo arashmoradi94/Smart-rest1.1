@@ -47,7 +47,7 @@ export async function runReminderSweep(now = new Date()): Promise<ReminderSweepR
     const inFormingGroup =
       !!b.groupBreakId &&
       (await prisma.groupBreak
-        .count({ where: { id: b.groupBreakId, status: "FORMING" } })
+        .count({ where: { id: b.groupBreakId, status: { in: ["FORMING", "DELAYED"] } } })
         .catch(() => 0)) > 0;
     await sendPushToUser(b.userId, inFormingGroup
       ? {

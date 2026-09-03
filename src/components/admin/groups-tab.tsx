@@ -7,7 +7,10 @@ import { formatPersianNumber, formatPersianTime } from "@/lib/utils";
 
 interface MonitorGroup {
   id: string;
-  status: "ACTIVE" | "READY" | "WAITING" | "WAITING_CALL";
+  status: "ACTIVE" | "READY" | "WAITING" | "WAITING_CALL" | "DELAYED" | "COMPLETED";
+  requestedAt?: string;
+  durationMinutes?: number;
+  capacityStatus?: string;
   startedAt?: string;
   endsAt?: string;
   members: Array<{ userId: string; name: string; ready: boolean; onCall: boolean }>;
@@ -33,6 +36,8 @@ const STATUS_META: Record<MonitorGroup["status"], { label: string; color: string
   READY: { label: "آماده — منتظر ظرفیت", color: "var(--warning)" },
   WAITING: { label: "در انتظار اعضا", color: "var(--muted)" },
   WAITING_CALL: { label: "منتظر پایان تماس عضو", color: "var(--warning)" },
+  DELAYED: { label: "به‌تعویق‌افتاده به‌دلیل ظرفیت", color: "var(--danger)" },
+  COMPLETED: { label: "تکمیل‌شده", color: "var(--muted)" },
 };
 
 export function GroupsTab({ timezone }: { timezone?: string }) {
@@ -118,6 +123,11 @@ export function GroupsTab({ timezone }: { timezone?: string }) {
                   {g.startedAt && g.endsAt
                     ? `${formatPersianTime(g.startedAt, timezone)} تا ${formatPersianTime(g.endsAt, timezone)}`
                     : `آماده: ${formatPersianNumber(g.readyCount)} از ${formatPersianNumber(g.totalCount)}`}
+                </p>
+                <p className="text-[11px]" style={{ color: "var(--muted)" }}>
+                  درخواست: {g.requestedAt ? formatPersianTime(g.requestedAt, timezone) : "—"}
+                  {g.capacityStatus ? ` · ظرفیت: ${g.capacityStatus}` : ""}
+                  {g.durationMinutes !== undefined ? ` · مدت: ${formatPersianNumber(g.durationMinutes)} دقیقه` : ""}
                 </p>
               </li>
             );

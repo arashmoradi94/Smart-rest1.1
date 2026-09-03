@@ -58,7 +58,7 @@ export function BuddyPanel({
 
   // Poll group status while a group is forming/active
   useEffect(() => {
-    if (group && (group.status === "FORMING" || group.status === "ACTIVE")) {
+    if (group && (group.status === "FORMING" || group.status === "DELAYED" || group.status === "ACTIVE")) {
       timer.current = setInterval(load, 5000);
       return () => {
         if (timer.current) clearInterval(timer.current);
@@ -263,10 +263,10 @@ export function BuddyPanel({
       )}
 
       {/* Group break */}
-      {group?.status === "FORMING" && (
+      {(group?.status === "FORMING" || group?.status === "DELAYED") && (
         <div className="flex flex-col gap-2 rounded-2xl p-3" style={{ background: "rgba(245,158,11,.1)" }}>
           <p className="text-center text-sm font-bold" style={{ color: "var(--warning)" }}>
-            ⏳ منتظر آماده‌شدن هم‌تیمی هستیم…
+            {group.status === "DELAYED" ? "⏳ ظرفیت مناسب نیست؛ در صف استراحت گروهی هستید…" : "⏳ منتظر آماده‌شدن هم‌تیمی هستیم…"}
           </p>
           <ul className="flex flex-col gap-1">
             {group.members.map((m) => (

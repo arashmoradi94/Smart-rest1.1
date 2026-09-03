@@ -128,6 +128,9 @@ export function rankBreakMatches(
     name: string;
     isBuddy: boolean;
     onCall: boolean;
+    ready?: boolean;
+    online?: boolean;
+    shiftCompatible?: boolean;
     nextBreak?: { scheduledStart: Date; scheduledEnd: Date };
   }>,
   now: Date,
@@ -139,6 +142,7 @@ export function rankBreakMatches(
       (c) =>
         c.nextBreak &&
         !c.onCall &&
+        c.online !== false &&
         c.nextBreak.scheduledStart.getTime() > now.getTime() &&
         c.nextBreak.scheduledStart.getTime() <= limit,
     )
@@ -152,10 +156,17 @@ export function rankBreakMatches(
       ),
       scheduledStart: c.nextBreak!.scheduledStart.toISOString(),
       scheduledEnd: c.nextBreak!.scheduledEnd.toISOString(),
+      ready: c.ready ?? false,
+      online: c.online ?? true,
+      shiftCompatible: c.shiftCompatible ?? false,
     }))
     .sort(
       (a, b) =>
-        Number(b.isBuddy) - Number(a.isBuddy) || a.minutesUntilBreak - b.minutesUntilBreak,
+        a.minutesUntilBreak - b.minutesUntilBreak ||
+        Number(b.ready ?? false) - Number(a.ready ?? false) ||
+        Number(b.online ?? true) - Number(a.online ?? true) ||
+        Number(b.shiftCompatible ?? false) - Number(a.shiftCompatible ?? false) ||
+        Number(b.isBuddy) - Number(a.isBuddy),
     )
     .slice(0, 5);
 }

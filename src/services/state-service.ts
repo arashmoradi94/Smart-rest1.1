@@ -211,7 +211,9 @@ export async function getEmployeeState(
 
   const next = open?.status === "SCHEDULED" ? open : undefined;
   const group = await getGroupBreakStatus(userId);
-  const waitingBuddy = group?.status === "FORMING" && !!group.members.find((m) => m.userId === userId && m.ready);
+  const waitingBuddy =
+    (group?.status === "FORMING" || group?.status === "DELAYED") &&
+    !!group.members.find((m) => m.userId === userId && m.ready);
   // Break Buddy matching — a quiet, ignorable suggestion list; never blocks
   // or moves the employee's own scheduled break.
   const buddySvc = await import("@/services/buddy-service");

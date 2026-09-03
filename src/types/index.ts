@@ -79,7 +79,7 @@ export interface GroupMemberView {
 
 export interface GroupBreakView {
   groupBreakId: string;
-  status: "FORMING" | "ACTIVE";
+  status: "FORMING" | "DELAYED" | "ACTIVE";
   members: GroupMemberView[];
   readyCount: number;
   totalCount: number;
