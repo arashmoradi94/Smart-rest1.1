@@ -258,4 +258,46 @@ describe("Smart group flow (integration, temp db)", () => {
     expect(matches.enabled).toBe(false);
     await settingsSvc.updateSettings({ groupBreakEnabled: true });
   });
+
+  it("does not start when a fixed group member is offline, then proceeds when they return", async () => {
+    const now = new Date("2026-08-25T08:00:00.000Z");
+    await settingsSvc.updateSettings({ maxConcurrentBreaks: 50, maxGroupBreakLoadRatio: 1.0 });
+    await db.prisma.buddyLink.deleteMany({});
+    await db.prisma.groupBreak.updateMany({ where: { status: { in: ["FORMING", "DELAYED", "ACTIVE"] } }, data: { status: "CANCELLED" } });
+    await db.prisma.break.updateMany({ where: { actualStart: { not: null }, actualEnd: null }, data: { actualEnd: now, status: "COMPLETED" } });
+    await db.prisma.shift.updateMany({ where: { userId: { in: [ids.ali, ids.u1, ids.u2] }, status: "ACTIVE" }, data: { status: "ENDED", endedAt: now } });
+    await db.prisma.user.updateMany({ data: { status: "OFFLINE", onCall: false } });
+    for (const uid of [ids.ali, ids.u1, ids.u2]) await shiftSvc.startShift(uid, now);
+    await buddySvc.adminSetBuddy(ids.admin, ids.ali, ids.u1, true);
+    await buddySvc.adminSetBuddy(ids.admin, ids.ali, ids.u2, true);
+    await db.prisma.user.update({ where: { id: ids.u1 }, data: { status: "OFFLINE" } });
+
+    await buddySvc.readyForGroupBreak(ids.ali, at(now, 61));
+    const waiting = await buddySvc.readyForGroupBreak(ids.u2, at(now, 61));
+    expect(waiting.started).toBe(false);
+    expect((waiting as { waitingUnavailable?: boolean }).waitingUnavailable).toBe(true);
+
+    await db.prisma.user.update({ where: { id: ids.u1 }, data: { status: "WORKING" } });
+    const resumed = await buddySvc.readyForGroupBreak(ids.u1, at(now, 62));
+    const final = resumed.started ? resumed : await buddySvc.readyForGroupBreak(ids.ali, at(now, 62));
+    expect(resumed.started || final.started).toBe(true);
+  });
+
+  it("does not start when a fixed group member is on call", async () => {
+    const now = new Date("2026-08-26T08:00:00.000Z");
+    await settingsSvc.updateSettings({ maxConcurrentBreaks: 50, maxGroupBreakLoadRatio: 1.0 });
+    await db.prisma.buddyLink.deleteMany({});
+    await db.prisma.groupBreak.updateMany({ where: { status: { in: ["FORMING", "DELAYED", "ACTIVE"] } }, data: { status: "CANCELLED" } });
+    await db.prisma.shift.updateMany({ where: { userId: { in: [ids.ali, ids.u1, ids.u2] }, status: "ACTIVE" }, data: { status: "ENDED", endedAt: now } });
+    await db.prisma.user.updateMany({ data: { status: "OFFLINE", onCall: false } });
+    for (const uid of [ids.ali, ids.u1, ids.u2]) await shiftSvc.startShift(uid, now);
+    await buddySvc.adminSetBuddy(ids.admin, ids.ali, ids.u1, true);
+    await buddySvc.adminSetBuddy(ids.admin, ids.ali, ids.u2, true);
+    await db.prisma.user.update({ where: { id: ids.u1 }, data: { onCall: true } });
+
+    await buddySvc.readyForGroupBreak(ids.ali, at(now, 61));
+    const result = await buddySvc.readyForGroupBreak(ids.u2, at(now, 61));
+    expect(result.started).toBe(false);
+    expect((result as { waitingOnCall?: boolean }).waitingOnCall).toBe(true);
+  });
 });

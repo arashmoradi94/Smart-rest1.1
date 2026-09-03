@@ -1,16 +1,19 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Moon, Sun } from "lucide-react";
 
 export function ThemeToggle() {
-  // Read the DOM-applied theme during the first client render — no effect,
-  // no cascading render. SSR fallback stays "light" like the current default.
-  const [theme, setTheme] = useState<"light" | "dark">(() =>
-    typeof document !== "undefined" && document.documentElement.dataset.theme === "dark"
+  const [theme, setTheme] = useState<"light" | "dark">("light");
+
+  useEffect(() => {
+    const stored = localStorage.getItem("theme");
+    const next = stored === "dark" || (!stored && matchMedia("(prefers-color-scheme: dark)").matches)
       ? "dark"
-      : "light",
-  );
+      : "light";
+    document.documentElement.dataset.theme = next;
+    queueMicrotask(() => setTheme(next));
+  }, []);
 
   function toggle() {
     const next = theme === "dark" ? "light" : "dark";

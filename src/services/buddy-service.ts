@@ -298,18 +298,25 @@ export async function readyForGroupBreak(userId: string, now = new Date()) {
     select: { id: true, name: true, onCall: true, status: true },
   });
   const userMap = Object.fromEntries(users.map((u) => [u.id, u]));
-  // Members without an active shift can't ready — drop them from the expectation
-  // instead of blocking the group forever.
   const onShiftIds: string[] = [];
   for (const uid of rosterIds) {
     const s = await getActiveShift(uid).catch(() => null);
     if (s) onShiftIds.push(uid);
   }
   const readyIds = members.filter((m) => m.readyAt && onShiftIds.includes(m.userId)).map((m) => m.userId);
-  const expected = onShiftIds.sort();
+  const expected = rosterIds.sort();
   const readyCount = readyIds.length;
   const totalCount = expected.length;
-  const onCallBlocker = expected.some((id) => userMap[id]?.onCall);
+  const unavailableIds = expected.filter(
+    (id) =>
+      !onShiftIds.includes(id) ||
+      userMap[id]?.onCall ||
+      userMap[id]?.status === "OFFLINE" ||
+      userMap[id]?.status === "ON_CALL",
+  );
+  const onCallBlocker = expected.some(
+    (id) => userMap[id]?.onCall || userMap[id]?.status === "ON_CALL",
+  );
 
   // A group needs at least one OTHER on-shift member; otherwise start solo.
   if (totalCount <= 1) {
@@ -329,16 +336,30 @@ export async function readyForGroupBreak(userId: string, now = new Date()) {
   // Everyone ready AND nobody on a call → start. A member inside a call keeps
   // the whole group waiting; their break is never lost.
   const everyoneReady =
-    totalCount > 1 && expected.every((id) => readyIds.includes(id)) && !onCallBlocker;
+    totalCount > 1 &&
+    unavailableIds.length === 0 &&
+    expected.every((id) => readyIds.includes(id)) &&
+    !onCallBlocker;
 
   if (!everyoneReady) {
+    if (unavailableIds.length > 0 && group.status !== "DELAYED") {
+      await prisma.groupBreak.update({
+        where: { id: group.id },
+        data: { status: "DELAYED" },
+      });
+    }
     return {
       groupBreakId: group.id,
       started: false,
       readyCount,
       totalCount,
       waitingOnCall: onCallBlocker,
-      message: onCallBlocker ? "یکی از اعضا در تماس است؛ منتظر می‌مانیم…" : "منتظر آماده‌شدن هم‌تیمی هستیم…",
+      waitingUnavailable: unavailableIds.length > 0,
+      message: onCallBlocker
+        ? "یکی از اعضا در تماس است؛ منتظر می‌مانیم…"
+        : unavailableIds.length > 0
+          ? "یکی از اعضای گروه آفلاین یا فاقد شیفت فعال است؛ پس از آماده‌شدن او دوباره تلاش کنید…"
+          : "منتظر آماده‌شدن هم‌تیمی هستیم…",
     };
   }
 
