@@ -28,6 +28,24 @@ model User {
   coinTransactions  CoinTransaction[]
   redemptions       RewardRedemption[]
   pushSubscriptions PushSubscription[]
+  sentDirectMessages DirectMessage[] @relation("DirectMessageSender")
+  receivedDirectMessages DirectMessage[] @relation("DirectMessageRecipient")
+}
+
+model DirectMessage {
+  id          String   @id @default(cuid())
+  senderId    String
+  recipientId String
+  message     String
+  isRead      Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  readAt      DateTime?
+
+  sender    User @relation("DirectMessageSender", fields: [senderId], references: [id], onDelete: Cascade)
+  recipient User @relation("DirectMessageRecipient", fields: [recipientId], references: [id], onDelete: Cascade)
+
+  @@index([recipientId, isRead, createdAt])
+  @@index([senderId, createdAt])
 }
 
 model Shift {

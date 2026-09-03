@@ -21,6 +21,7 @@ import {
   Timer,
   Users,
   UsersRound,
+  MessageSquare,
 } from "lucide-react";
 import { StatusBadge } from "@/components/status-badge";
 import { useLiveRefresh } from "@/lib/use-live";
@@ -76,6 +77,8 @@ export function AdminDashboard({ adminName }: { adminName: string }) {
   const [busy, setBusy] = useState(false);
   const [announcement, setAnnouncement] = useState("");
   const [notice, setNotice] = useState("");
+  const [messageRecipient, setMessageRecipient] = useState<string | null>(null);
+  const [directMessage, setDirectMessage] = useState("");
 
   const flash = useCallback((m: string) => {
     setNotice(m);
@@ -147,6 +150,33 @@ export function AdminDashboard({ adminName }: { adminName: string }) {
       else {
         setMsg("اطلاعیه ارسال شد ✓");
         setAnnouncement("");
+      }
+
+    } catch {
+      setError("ارتباط برقرار نشد");
+    } finally {
+      setBusy(false);
+    }
+
+  }
+
+  async function sendDirectMessage() {
+    if (!messageRecipient || !directMessage.trim() || busy) return;
+    setBusy(true);
+    setError("");
+    setMsg("");
+    try {
+      const r = await fetch("/api/admin/messages", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ recipientId: messageRecipient, message: directMessage }),
+      });
+      const d = await r.json();
+      if (!r.ok) setError(d.error ?? "ارسال پیام ناموفق بود");
+      else {
+        setMsg("پیام مستقیم ارسال شد ✓");
+        setDirectMessage("");
+        setMessageRecipient(null);
       }
     } catch {
       setError("ارتباط برقرار نشد");
@@ -346,6 +376,16 @@ export function AdminDashboard({ adminName }: { adminName: string }) {
                         </div>
                         <StatusBadge status={emp.status as UserStatus} label={emp.statusLabel} />
                         <span className="flex gap-1">
+                          <button
+                            onClick={() => setMessageRecipient(emp.id)}
+                            disabled={busy}
+                            className="flex size-8 items-center justify-center rounded-lg disabled:opacity-50"
+                            style={{ background: "rgba(99,102,241,.12)", color: "var(--break)" }}
+                            aria-label={`ارسال پیام به ${emp.name}`}
+                            title="ارسال پیام"
+                          >
+                            <MessageSquare className="size-4" aria-hidden />
+                          </button>
                           {emp.status === "WORKING" && (
                             <button
                               onClick={() => override(emp.id, "start")}
@@ -448,6 +488,24 @@ export function AdminDashboard({ adminName }: { adminName: string }) {
                   ))}
                 </ul>
               </section>
+              {messageRecipient && (
+                <section className="glass-card rounded-3xl p-4">
+                  <h2 className="mb-2 text-sm font-bold">
+                    پیام به {state.employees.find((e) => e.id === messageRecipient)?.name ?? "کارمند"}
+                  </h2>
+                  <textarea
+                    value={directMessage}
+                    onChange={(e) => setDirectMessage(e.target.value)}
+                    maxLength={500}
+                    className="min-h-20 w-full rounded-xl border border-slate-300/20 bg-transparent p-2 text-sm"
+                    placeholder="پیام کوتاه مدیریتی..."
+                  />
+                  <div className="mt-2 flex gap-2">
+                    <button onClick={sendDirectMessage} disabled={busy || !directMessage.trim()} className="rounded-xl px-4 py-2 text-xs font-bold text-white disabled:opacity-50" style={{ background: "var(--break)" }}>ارسال پیام</button>
+                    <button onClick={() => setMessageRecipient(null)} className="rounded-xl px-4 py-2 text-xs" style={{ background: "rgba(148,163,184,.1)" }}>انصراف</button>
+                  </div>
+                </section>
+              )}
             </>
           )}
         </>

@@ -12,6 +12,7 @@ import {
   PlayCircle,
   StopCircle,
   WifiOff,
+  MessageSquare,
 } from "lucide-react";
 import { StatusBadge } from "@/components/status-badge";
 import { TimerRing } from "@/components/timer-ring";
@@ -87,6 +88,16 @@ export function EmployeeDashboard({ userName }: { userName: string }) {
   const [emergencyOpen, setEmergencyOpen] = useState(false);
   const [emergencyReason, setEmergencyReason] = useState<"RESTROOM" | "ILLNESS" | "URGENT_REST" | "OTHER">("RESTROOM");
   const [emergencyNote, setEmergencyNote] = useState("");
+  const [messages, setMessages] = useState<Array<{
+    id: string;
+    message: string;
+    isRead: boolean;
+    createdAt: string;
+    readAt?: string | null;
+    sender: { name: string; username: string };
+  }>>([]);
+  const [messagesOpen, setMessagesOpen] = useState(false);
+  const messageNoticeIds = useRef<Set<string>>(new Set());
 
   const apply = useCallback((s: EmployeeDashboardState) => {
     setState(s);
@@ -118,6 +129,23 @@ export function EmployeeDashboard({ userName }: { userName: string }) {
     }
   }, [apply]);
 
+  const fetchMessages = useCallback(async () => {
+    try {
+      const r = await fetch("/api/messages", { cache: "no-store" });
+      if (!r.ok) return;
+      const next = await r.json();
+      for (const item of next as typeof messages) {
+        if (!item.isRead && !messageNoticeIds.current.has(item.id)) {
+          messageNoticeIds.current.add(item.id);
+          notify("پیام جدید از سرپرست", item.message, `direct-message:${item.id}`, "announcement");
+        }
+      }
+      setMessages(next);
+    } catch {
+      // State polling remains independent from optional message refresh.
+    }
+  }, []);
+
   useEffect(() => {
     queueMicrotask(() => void fetchState());
     const onOnline = () => {
@@ -135,6 +163,38 @@ export function EmployeeDashboard({ userName }: { userName: string }) {
 
   // SSE live updates + 60s polling fallback + visibility refresh
   useLiveRefresh(fetchState, 60_000);
+
+  useEffect(() => {
+    const initial = setTimeout(() => void fetchMessages(), 0);
+    const id = setInterval(fetchMessages, 30_000);
+    return () => {
+      clearTimeout(initial);
+      clearInterval(id);
+    };
+  }, [fetchMessages]);
+
+  useEffect(() => {
+    if (!messagesOpen) return;
+    const unread = messages.filter((item) => !item.isRead);
+    if (unread.length === 0) return;
+    void Promise.all(
+      unread.map((item) =>
+        fetch("/api/messages", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ messageId: item.id }),
+        }),
+      ),
+    ).then((responses) => {
+      if (responses.every((response) => response.ok)) {
+        setMessages((current) =>
+          current.map((item) =>
+            item.isRead ? item : { ...item, isRead: true, readAt: new Date().toISOString() },
+          ),
+        );
+      }
+    });
+  }, [messagesOpen, messages]);
 
   const act = useCallback(
     async (path: string) => {
@@ -238,6 +298,20 @@ export function EmployeeDashboard({ userName }: { userName: string }) {
         <div className="flex gap-2">
           <ThemeToggle />
           <button
+            onClick={() => setMessagesOpen((open) => !open)}
+            className="relative flex size-10 items-center justify-center rounded-xl transition hover:opacity-70"
+            style={{ background: "rgba(99,102,241,.1)", color: "var(--break)" }}
+            aria-label="پیام‌ها"
+            aria-pressed={messagesOpen}
+          >
+            <MessageSquare className="size-5" aria-hidden />
+            {messages.some((m) => !m.isRead) && (
+              <span className="absolute -right-1 -top-1 flex min-w-5 animate-pulse items-center justify-center rounded-full px-1 text-[10px] font-bold text-white" style={{ background: "var(--danger)" }}>
+                {formatPersianNumber(messages.filter((m) => !m.isRead).length)}
+              </span>
+            )}
+          </button>
+          <button
             onClick={() => signOut({ callbackUrl: "/login" })}
             className="flex size-10 items-center justify-center rounded-xl transition hover:opacity-70"
             style={{ background: "rgba(100,116,139,.1)", color: "var(--muted)" }}
@@ -257,6 +331,42 @@ export function EmployeeDashboard({ userName }: { userName: string }) {
         >
           📢 {announcement}
         </div>
+      )}
+      {messagesOpen && (
+        <section className="glass-card rounded-2xl p-4" aria-label="پیام‌ها">
+          <h2 className="mb-3 flex items-center gap-2 text-sm font-bold">
+            <MessageSquare className="size-4" aria-hidden /> پیام‌ها
+          </h2>
+          {messages.length === 0 ? (
+            <p className="text-sm" style={{ color: "var(--muted)" }}>پیامی ندارید.</p>
+          ) : (
+            <ul className="flex flex-col gap-2">
+              {messages.map((item) => (
+                <li key={item.id} className="rounded-xl p-3 text-sm" style={{ background: "rgba(148,163,184,.08)" }}>
+                  <p>{item.message}</p>
+                  <p className="mt-2 text-xs" style={{ color: "var(--muted)" }}>
+                    {item.sender.name} · {new Intl.DateTimeFormat("fa-IR", { dateStyle: "short", timeStyle: "short" }).format(new Date(item.createdAt))}
+                    {" · "}{item.isRead ? "خوانده‌شده" : "خوانده‌نشده"}
+                  </p>
+                  {!item.isRead && (
+                    <button
+                      className="mt-2 rounded-lg px-2 py-1 text-xs font-bold text-white"
+                      style={{ background: "var(--break)" }}
+                      onClick={async () => {
+                        const r = await fetch("/api/messages", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ messageId: item.id }) });
+                        if (r.ok) {
+                          setMessages((current) => current.map((message) => message.id === item.id ? { ...message, isRead: true, readAt: new Date().toISOString() } : message));
+                        }
+                      }}
+                    >
+                      علامت‌گذاری به‌عنوان خوانده‌شده
+                    </button>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
       )}
       {state.dinner && (
         <section className="glass-card rounded-2xl px-4 py-3">
