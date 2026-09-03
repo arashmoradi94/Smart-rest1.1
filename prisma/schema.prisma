@@ -151,7 +151,7 @@ model BuddyRequest {
   createdAt   DateTime  @default(now())
   respondedAt DateTime?
 
-  @@unique([requesterId, addresseeId])
+  @@unique([requesterId, addresseeId], map: "sqlite_autoindex_BuddyRequest_2")
 }
 
 model BuddyLink {
@@ -160,7 +160,7 @@ model BuddyLink {
   bId       String
   createdAt DateTime @default(now())
 
-  @@unique([aId, bId])
+  @@unique([aId, bId], map: "sqlite_autoindex_BuddyLink_2")
   @@index([bId])
 }
 
@@ -205,7 +205,7 @@ model GroupBreakMember {
 
   groupBreak GroupBreak @relation(fields: [groupBreakId], references: [id], onDelete: Cascade)
 
-  @@unique([groupBreakId, userId])
+  @@unique([groupBreakId, userId], map: "sqlite_autoindex_GroupBreakMember_2")
   @@index([userId])
 }
 
