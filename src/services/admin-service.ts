@@ -12,6 +12,7 @@ const STATUS_LABEL: Record<string, string> = {
   ON_CALL: "در تماس",
   WAITING_BUDDY: "انتظار برای گروه",
   LATE: "تأخیر",
+  EMERGENCY: "استراحت اضطراری",
   OFFLINE: "آفلاین",
 };
 
@@ -48,11 +49,26 @@ export async function getAdminState(now = new Date()): Promise<AdminDashboardSta
 
       if (shift) {
         const open = shift.breaks[shift.breaks.length - 1];
-        const done = shift.breaks.filter((b) => b.status === "COMPLETED" || b.status === "LATE");
+        const done = shift.breaks.filter((b) => (b.status === "COMPLETED" || b.status === "LATE") && b.kind !== "EMERGENCY");
         totalBreakMinutes = done.reduce((s, b) => s + (b.durationMinutes ?? 0), 0);
         breakCount = done.length;
 
-        if (open && (open.status === "ACTIVE" || open.status === "OVERTIME") && open.actualStart) {
+        if (open?.kind === "EMERGENCY" && open.status === "ACTIVE" && open.actualStart) {
+          status = "EMERGENCY";
+          currentBreak = {
+            id: open.id,
+            scheduledStart: open.scheduledStart.toISOString(),
+            scheduledEnd: open.scheduledEnd.toISOString(),
+            actualStart: open.actualStart.toISOString(),
+            endsAt: now.toISOString(),
+            durationMinutes: Math.max(0, Math.round((now.getTime() - open.actualStart.getTime()) / 60_000)),
+            group: false,
+            kind: "EMERGENCY",
+            emergencyReason: open.emergencyReason as "RESTROOM" | "ILLNESS" | "URGENT_REST" | "OTHER",
+            emergencyNote: open.emergencyNote ?? undefined,
+          };
+          countdownSeconds = Math.max(0, Math.round((now.getTime() - open.actualStart.getTime()) / 1000));
+        } else if (open && (open.status === "ACTIVE" || open.status === "OVERTIME") && open.actualStart) {
           const endsAt = addMinutes(open.actualStart, settings.breakDurationMinutes + open.extendMinutes);
           status = now > endsAt ? "LATE" : "ON_BREAK";
           currentBreak = {

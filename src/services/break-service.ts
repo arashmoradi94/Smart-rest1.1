@@ -50,6 +50,7 @@ export async function startBreak(userId: string, now = new Date(), opts?: { forc
   if (open && (open.status === "ACTIVE" || open.status === "OVERTIME")) {
     throw new AppError("شما هم‌اکنون در استراحت هستید", 409);
   }
+
   if (!open || open.status !== "SCHEDULED") {
     throw new AppError("استراحت برنامه‌ریزی‌شده‌ای برای شما وجود ندارد", 409);
   }
@@ -99,6 +100,54 @@ export async function startBreak(userId: string, now = new Date(), opts?: { forc
   return getEmployeeState(userId, now);
 }
 
+export async function startEmergencyBreak(
+  userId: string,
+  reason: "RESTROOM" | "ILLNESS" | "URGENT_REST" | "OTHER",
+  note?: string,
+  now = new Date(),
+) {
+  const shift = await getActiveShift(userId);
+  if (!shift) throw new AppError("ابتدا شیفت خود را شروع کنید", 409);
+  const user = await prisma.user.findUnique({ where: { id: userId }, select: { onCall: true } });
+  if (user?.onCall) throw new AppError("هنگام تماس امکان استراحت اضطراری ندارید", 409);
+  const active = shift.breaks.find((b) => b.status === "ACTIVE" || b.status === "OVERTIME");
+  if (active) throw new AppError("شما هم‌اکنون در استراحت هستید", 409);
+  const regular = shift.breaks.filter((b) => b.kind !== "EMERGENCY");
+  const last = regular[regular.length - 1];
+  const created = await prisma.$transaction(async (tx) => {
+    const open = await tx.break.findFirst({ where: { shiftId: shift.id, status: { in: ["ACTIVE", "OVERTIME"] } } });
+    if (open) throw new AppError("استراحت دیگری در حال اجراست", 409);
+    const emergency = await tx.break.create({
+      data: {
+        shiftId: shift.id,
+        userId,
+        breakIndex: (last?.breakIndex ?? -1) + 1,
+        scheduledStart: now,
+        scheduledEnd: now,
+        actualStart: now,
+        kind: "EMERGENCY",
+        emergencyReason: reason,
+        emergencyNote: note?.trim().slice(0, 240) || null,
+        status: "ACTIVE",
+      },
+    });
+    await tx.user.update({ where: { id: userId }, data: { status: "ON_BREAK" } });
+    return emergency;
+  });
+  await (await import("@/lib/audit")).logAudit(userId, "EMERGENCY_BREAK_START", `break:${created.id} reason:${reason}`);
+  const { sendPushToUser } = await import("@/lib/push");
+  sendPushToUser(userId, {
+    title: "🚨 استراحت اضطراری",
+    body: "استراحت اضطراری شما آغاز شد.",
+    tag: `emergency-start:${created.id}`,
+    kind: "break-start",
+    url: "/dashboard",
+  }).catch(() => {});
+  publishStates([userId]);
+  const { getEmployeeState } = await import("@/services/state-service");
+  return getEmployeeState(userId, now);
+}
+
 export async function returnToWork(userId: string, now = new Date()) {
   const settings = await getSettings();
   const shift = await getActiveShift(userId);
@@ -107,6 +156,24 @@ export async function returnToWork(userId: string, now = new Date()) {
   const open = shift.breaks.find((b) => b.status === "ACTIVE" || b.status === "OVERTIME");
   if (!open) throw new AppError("در حال حاضر در استراحت نیستید", 409);
   if (!open.actualStart) throw new AppError("وضعیت استراحت نامعتبر است", 409);
+  if (open.kind === "EMERGENCY") {
+    const durationMinutes = Math.max(0, Math.round((now.getTime() - open.actualStart.getTime()) / 60_000));
+    const ended = await prisma.$transaction(async (tx) => {
+      const res = await tx.break.updateMany({
+        where: { id: open.id, status: { in: ["ACTIVE", "OVERTIME"] }, actualEnd: null },
+        data: { actualEnd: now, durationMinutes, status: "COMPLETED" },
+      });
+      if (res.count !== 1) throw new AppError("استراحت اضطراری قبلاً پایان یافته است", 409);
+      await tx.user.update({ where: { id: userId }, data: { status: "WORKING" } });
+      return durationMinutes;
+    });
+    await (await import("@/lib/audit")).logAudit(userId, "EMERGENCY_BREAK_RETURN", `break:${open.id} duration:${ended}m`);
+    const fresh = (await getActiveShift(userId))!;
+    await ensureNextBreak(fresh, settings, now);
+    publishStates([userId]);
+    const { getEmployeeState } = await import("@/services/state-service");
+    return getEmployeeState(userId, now);
+  }
 
   // Server rule: the break ALWAYS gets its full duration from actualStart
   // (+ admin-granted extension). Starting late never shortens it.

@@ -5,13 +5,14 @@ import { companyDayKey } from "@/lib/time";
 import { getSettings } from "@/services/settings-service";
 import { autoAdvance, buildShiftReport, ensureNextBreak, getActiveShift } from "@/services/shift-service";
 import { getGroupBreakStatus } from "@/services/buddy-service";
+import { dinnerView, getTodayDinner } from "@/services/dinner-service";
 import type { BreakHistoryItem, EmployeeDashboardState, TimelineEvent } from "@/types";
 
-type BreakRow = { status: string; durationMinutes: number | null; endDelayMinutes: number };
+type BreakRow = { status: string; durationMinutes: number | null; endDelayMinutes: number; kind?: string };
 type ShiftRow = Prisma.ShiftGetPayload<{ include: { breaks: true } }>;
 
 function buildStats(breaks: BreakRow[], breakDurationMinutes: number) {
-  const done = breaks.filter((b) => b.status === "COMPLETED" || b.status === "LATE");
+  const done = breaks.filter((b) => (b.status === "COMPLETED" || b.status === "LATE") && b.kind !== "EMERGENCY");
   const late = done.filter((b) => b.endDelayMinutes > 0).length;
   return {
     breakCount: done.length,
@@ -113,6 +114,7 @@ export async function getEmployeeState(
 ): Promise<EmployeeDashboardState> {
   const settings = await getSettings();
   const serverTime = now.toISOString();
+  const dinner = dinnerView(await getTodayDinner(userId, companyDayKey(now, settings.timezone)), now, settings.timezone);
 
   let shift = await getActiveShift(userId);
   if (!shift) {
@@ -144,6 +146,7 @@ export async function getEmployeeState(
         history: buildHistory(last.breaks),
         report: buildShiftReport(last, settings.breakDurationMinutes, last.endedAt),
         settings,
+        dinner,
       };
     }
     return {
@@ -162,6 +165,7 @@ export async function getEmployeeState(
       timeline: [],
       history: [],
       settings,
+      dinner,
     };
   }
 
@@ -185,7 +189,36 @@ export async function getEmployeeState(
     timeline: buildTimeline(shift, settings.timezone),
     history: buildHistory(shift.breaks),
     settings,
+    dinner,
   };
+
+  if (open && open.kind === "EMERGENCY" && open.status === "ACTIVE" && open.actualStart) {
+    const emergency = {
+      id: open.id,
+      reason: open.emergencyReason as "RESTROOM" | "ILLNESS" | "URGENT_REST" | "OTHER",
+      note: open.emergencyNote ?? undefined,
+      startedAt: open.actualStart.toISOString(),
+    };
+    return {
+      ...base,
+      userStatus: "EMERGENCY",
+      focusMode: "BREAK",
+      emergencyBreak: emergency,
+      currentBreak: {
+        id: open.id,
+        scheduledStart: open.scheduledStart.toISOString(),
+        scheduledEnd: open.scheduledEnd.toISOString(),
+        actualStart: open.actualStart.toISOString(),
+        status: "ACTIVE",
+        group: false,
+        kind: "EMERGENCY",
+        emergencyReason: emergency.reason,
+        emergencyNote: emergency.note,
+      },
+      timerLabel: "در استراحت اضطراری",
+      timerSeconds: diffSeconds(now, open.actualStart),
+    };
+  }
 
   if (open && (open.status === "ACTIVE" || open.status === "OVERTIME") && open.actualStart) {
     // Full duration from actualStart (+ admin extension) — scheduledEnd is only a suggestion

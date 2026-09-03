@@ -5,6 +5,7 @@ import { signOut } from "next-auth/react";
 import {
   Briefcase,
   Coffee,
+  AlertTriangle,
   Flag,
   Loader2,
   LogOut,
@@ -26,6 +27,7 @@ import type { EmployeeDashboardState } from "@/types";
 const STATUS_COLOR: Record<string, string> = {
   WORKING: "var(--working)",
   ON_BREAK: "var(--break)",
+  EMERGENCY: "var(--danger)",
   LATE: "var(--danger)",
   OFFLINE: "var(--muted)",
 };
@@ -82,6 +84,9 @@ export function EmployeeDashboard({ userName }: { userName: string }) {
   const [announcement, setAnnouncement] = useState("");
   const seenAnnouncement = useRef("");
   const [refreshKey, setRefreshKey] = useState(0);
+  const [emergencyOpen, setEmergencyOpen] = useState(false);
+  const [emergencyReason, setEmergencyReason] = useState<"RESTROOM" | "ILLNESS" | "URGENT_REST" | "OTHER">("RESTROOM");
+  const [emergencyNote, setEmergencyNote] = useState("");
 
   const apply = useCallback((s: EmployeeDashboardState) => {
     setState(s);
@@ -205,13 +210,17 @@ export function EmployeeDashboard({ userName }: { userName: string }) {
   }
 
   const color = STATUS_COLOR[state.userStatus] ?? STATUS_COLOR.OFFLINE;
-  const isBreak = state.userStatus === "ON_BREAK" || state.userStatus === "LATE";
-  const targetMs = isBreak
+  const isBreak = state.userStatus === "ON_BREAK" || state.userStatus === "LATE" || state.userStatus === "EMERGENCY";
+  const targetMs = state.userStatus === "EMERGENCY"
+    ? 0
+    : isBreak
     ? new Date(state.currentBreak!.endsAt ?? state.currentBreak!.scheduledEnd).getTime()
     : state.nextBreak
       ? new Date(state.nextBreak.scheduledStart).getTime()
       : 0;
-  const totalSeconds = isBreak
+  const totalSeconds = state.userStatus === "EMERGENCY"
+    ? Math.max(1, state.timerSeconds)
+    : isBreak
     ? state.settings.breakDurationMinutes * 60
     : state.settings.workDurationMinutes * 60;
   const finished = !state.hasActiveShift && state.shiftEnded;
@@ -248,6 +257,21 @@ export function EmployeeDashboard({ userName }: { userName: string }) {
         >
           📢 {announcement}
         </div>
+      )}
+      {state.dinner && (
+        <section className="glass-card rounded-2xl px-4 py-3">
+          <h2 className="text-sm font-bold">🍽️ زمان شام امروز</h2>
+          <p className="mt-1 text-sm">
+            <bdi>{state.dinner.startTime}</bdi> تا <bdi>{state.dinner.endTime}</bdi>
+          </p>
+          <p className="mt-1 text-xs" style={{ color: state.dinner.status === "ACTIVE" ? "var(--working)" : "var(--muted)" }}>
+            {state.dinner.status === "ACTIVE"
+              ? "زمان شام شما فرا رسیده است"
+              : state.dinner.status === "COMPLETED"
+                ? "زمان شام به پایان رسید"
+                : `${formatPersianNumber(state.dinner.minutesUntilStart ?? 0)} دقیقه تا شروع شام`}
+          </p>
+        </section>
       )}
       {offline && (
         <div
@@ -295,6 +319,11 @@ export function EmployeeDashboard({ userName }: { userName: string }) {
                 {formatPersianTime(state.currentBreak!.endsAt ?? state.currentBreak!.scheduledEnd, state.settings.timezone)} فرصت داری استراحت کنی ☕
               </p>
             )}
+            {state.userStatus === "EMERGENCY" && state.emergencyBreak && (
+              <p className="text-sm font-medium" style={{ color: "var(--danger)" }}>
+                استراحت اضطراری از ساعت {formatPersianTime(state.emergencyBreak.startedAt, state.settings.timezone)} آغاز شده است.
+              </p>
+            )}
             {state.userStatus === "LATE" && (
               <p className="text-sm font-medium" style={{ color: "var(--danger)" }}>
                 زمان استراحت تمام شده؛ لطفاً همین حالا به کار برگرد.
@@ -304,19 +333,26 @@ export function EmployeeDashboard({ userName }: { userName: string }) {
 
           <section className="flex flex-col gap-3">
             {state.userStatus === "WORKING" ? (
+            <>
               <button
                 onClick={() => act("/api/break/start")}
                 disabled={busy}
                 className="flex items-center justify-center gap-2 rounded-2xl py-4 text-base font-bold text-white transition active:scale-[.99] disabled:opacity-60"
                 style={{ background: "var(--break)" }}
               >
-                {busy ? (
-                  <Loader2 className="size-5 animate-spin" aria-hidden />
-                ) : (
-                  <Coffee className="size-5" aria-hidden />
-                )}
+                {busy ? <Loader2 className="size-5 animate-spin" aria-hidden /> : <Coffee className="size-5" aria-hidden />}
                 شروع استراحت
               </button>
+              <button
+                onClick={() => setEmergencyOpen(true)}
+                disabled={busy}
+                className="flex items-center justify-center gap-2 rounded-2xl py-3 text-sm font-bold transition disabled:opacity-60"
+                style={{ background: "rgba(239,68,68,.1)", color: "var(--danger)" }}
+              >
+                <AlertTriangle className="size-4" aria-hidden />
+                استراحت اضطراری
+              </button>
+            </>
             ) : (
               <button
                 onClick={() => act("/api/break/return")}
@@ -329,8 +365,57 @@ export function EmployeeDashboard({ userName }: { userName: string }) {
                 ) : (
                   <Briefcase className="size-5" aria-hidden />
                 )}
+
                 بازگشت به کار
               </button>
+            )}
+
+            {emergencyOpen && (
+              <div className="glass-card flex flex-col gap-3 rounded-2xl p-4">
+                <h2 className="text-sm font-bold">دلیل استراحت اضطراری</h2>
+                <div className="grid grid-cols-2 gap-2">
+                  {([
+                    ["RESTROOM", "🚻 سرویس بهداشتی"],
+                    ["ILLNESS", "🤒 کسالت / حال نامساعد"],
+                    ["URGENT_REST", "🧘 نیاز فوری به استراحت"],
+                    ["OTHER", "⚠️ سایر موارد ضروری"],
+                  ] as const).map(([value, label]) => (
+                    <button key={value} onClick={() => setEmergencyReason(value)} className="rounded-xl px-2 py-2 text-xs font-bold" style={{ background: emergencyReason === value ? "var(--danger)" : "rgba(148,163,184,.1)", color: emergencyReason === value ? "white" : undefined }}>
+                      {label}
+                    </button>
+                  ))}
+                </div>
+                {emergencyReason === "OTHER" && (
+                  <textarea value={emergencyNote} onChange={(e) => setEmergencyNote(e.target.value)} maxLength={240} placeholder="توضیح کوتاه (اختیاری)" className="min-h-20 rounded-xl border border-slate-300/20 bg-transparent p-2 text-sm" />
+                )}
+                <div className="flex gap-2">
+                  <button
+                    onClick={async () => {
+                      setEmergencyOpen(false);
+                      setBusy(true);
+                      setError("");
+                      try {
+                        const r = await fetch("/api/break/emergency", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ reason: emergencyReason, note: emergencyNote }) });
+                        const d = await r.json();
+                        if (!r.ok) setError(d.error ?? "شروع استراحت اضطراری ناموفق بود");
+                        else apply(d);
+                      } catch {
+                        setOffline(true);
+                        setError("ارتباط با سرور برقرار نشد.");
+                      } finally {
+                        setBusy(false);
+                      }
+                    }}
+                    className="flex-1 rounded-xl py-2 text-sm font-bold text-white"
+                    style={{ background: "var(--danger)" }}
+                  >
+                    شروع فوری
+                  </button>
+                  <button onClick={() => setEmergencyOpen(false)} className="rounded-xl px-4 py-2 text-sm" style={{ background: "rgba(148,163,184,.1)" }}>
+                    انصراف
+                  </button>
+                </div>
+              </div>
             )}
 
             {confirmEnd ? (

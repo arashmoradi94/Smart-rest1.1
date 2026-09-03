@@ -7,6 +7,7 @@ import { ReportsTab } from "@/components/admin/reports-tab";
 import { AuditTab } from "@/components/admin/audit-tab";
 import { UsersTab } from "@/components/admin/users-tab";
 import { GroupsTab } from "@/components/admin/groups-tab";
+import { DinnerTab } from "@/components/admin/dinner-tab";
 import {
   BarChart3,
   Briefcase,
@@ -64,7 +65,7 @@ function fmtCountdown(totalSeconds: number): string {
   return `${String(m).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
 }
 
-type Tab = "live" | "groups" | "reports" | "audit" | "users" | "settings";
+type Tab = "live" | "groups" | "dinner" | "reports" | "audit" | "users" | "settings";
 
 export function AdminDashboard({ adminName }: { adminName: string }) {
   const [state, setState] = useState<AdminDashboardState | null>(null);
@@ -235,6 +236,7 @@ export function AdminDashboard({ adminName }: { adminName: string }) {
           [
             ["live", "زنده", Users],
             ["groups", "گروه‌ها", UsersRound],
+            ["dinner", "برنامه شام", Coffee],
             ["reports", "گزارش‌ها", BarChart3],
             ["audit", "رخدادها", ScrollText],
             ["users", "کاربران", Users],
@@ -321,7 +323,6 @@ export function AdminDashboard({ adminName }: { adminName: string }) {
                   </ul>
                 </section>
               )}
-
               <section className="glass-card rounded-3xl p-4">
                 <h2 className="mb-3 text-sm font-bold">کارکنان</h2>
                 {state.employees.length === 0 && (
@@ -369,7 +370,7 @@ export function AdminDashboard({ adminName }: { adminName: string }) {
                               >
                                 <Briefcase className="size-4" aria-hidden />
                               </button>
-                              {emp.currentBreak && (
+                              {emp.currentBreak && emp.currentBreak.kind !== "EMERGENCY" && (
                                 <button
                                   onClick={() => breakControl(emp.currentBreak!.id, "extend")}
                                   disabled={busy}
@@ -456,6 +457,7 @@ export function AdminDashboard({ adminName }: { adminName: string }) {
       {tab === "audit" && <AuditTab />}
       {tab === "users" && <UsersTab onError={setError} onNotice={flash} />}
       {tab === "groups" && <GroupsTab timezone={state?.timezone} />}
+      {tab === "dinner" && <DinnerTab />}
 
       {tab === "settings" && (
         <section className="glass-card flex flex-col gap-4 rounded-3xl p-5">

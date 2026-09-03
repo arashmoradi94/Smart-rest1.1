@@ -3,6 +3,7 @@ export type UserStatus =
   | "OFFLINE"
   | "WORKING"
   | "ON_BREAK"
+  | "EMERGENCY"
   | "ON_CALL"
   | "WAITING_BUDDY"
   | "LATE";
@@ -19,6 +20,9 @@ export type BreakStatus =
   | "OVERTIME"
   | "CANCELLED"
   | "SKIPPED"; // legacy alias, read as CANCELLED
+
+export type BreakKind = "REGULAR" | "DINNER" | "EMERGENCY";
+export type EmergencyReason = "RESTROOM" | "ILLNESS" | "URGENT_REST" | "OTHER";
 
 export interface BreakScheduleInput {
   scheduledStart: Date;
@@ -120,6 +124,22 @@ export interface EmployeeDashboardState {
     endsAt?: string;
     status: BreakStatus;
     group: boolean;
+    kind?: BreakKind;
+    emergencyReason?: EmergencyReason;
+    emergencyNote?: string;
+  };
+  dinner?: {
+    date: string;
+    startTime: string;
+    endTime: string;
+    minutesUntilStart?: number;
+    status: "UPCOMING" | "ACTIVE" | "COMPLETED";
+  };
+  emergencyBreak?: {
+    id: string;
+    reason: EmergencyReason;
+    note?: string;
+    startedAt: string;
   };
   nextBreak?: { scheduledStart: string; scheduledEnd: string; ready: boolean };
   groupBreak?: GroupBreakView;
@@ -182,6 +202,9 @@ export interface AdminEmployeeView {
     startDelayMinutes?: number;
     endDelayMinutes?: number;
     group: boolean;
+    kind?: BreakKind;
+    emergencyReason?: EmergencyReason;
+    emergencyNote?: string;
   };
   totalBreakMinutes: number;
   breakCount: number;

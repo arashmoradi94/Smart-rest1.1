@@ -20,6 +20,7 @@ model User {
 
   shifts            Shift[]
   breaks            Break[]
+  dinnerAssignments DinnerAssignment[]
   xp                Int                @default(0)
   level             Int                @default(1)
   lastShiftDate     DateTime?
@@ -62,6 +63,9 @@ model Break {
   notifiedEarlyAt   DateTime?
   notifiedEndWarnAt DateTime?
   notifiedOverdueAt DateTime?
+  kind              String    @default("REGULAR")
+  emergencyReason   String?
+  emergencyNote     String?
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
 
@@ -72,6 +76,39 @@ model Break {
   @@index([userId, status])
   @@index([scheduledStart, scheduledEnd])
   @@index([groupBreakId])
+  @@index([kind, status])
+}
+
+model DinnerSchedule {
+  id              String   @id @default(cuid())
+  monthKey        String   @unique
+  mode            String   @default("AUTO")
+  startTime       String
+  endTime         String
+  slotMinutes     Int      @default(20)
+  published       Boolean  @default(false)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  assignments DinnerAssignment[]
+}
+
+model DinnerAssignment {
+  id           String   @id @default(cuid())
+  scheduleId   String
+  userId       String
+  date         String
+  startTime    String
+  endTime      String
+  allocation   String   @default("AUTO")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  schedule DinnerSchedule @relation(fields: [scheduleId], references: [id], onDelete: Cascade)
+  user     User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([scheduleId, userId, date])
+  @@index([userId, date])
 }
 
 model Settings {

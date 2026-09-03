@@ -135,12 +135,13 @@ export async function ensureNextBreak(
   settings: FullSettings,
   now: Date,
 ): Promise<void> {
-  const running = shift.breaks.find(
+  const regularBreaks = shift.breaks.filter((b) => b.kind !== "EMERGENCY");
+  const running = regularBreaks.find(
     (b) => b.status === "SCHEDULED" || b.status === "ACTIVE" || b.status === "OVERTIME",
   );
   if (running) return;
 
-  const last = shift.breaks[shift.breaks.length - 1];
+  const last = regularBreaks[regularBreaks.length - 1];
   // Next work cycle starts from the ACTUAL end of the previous break
   // (a cancelled/skipped one falls back to its scheduled end).
   const anchor = last
@@ -196,12 +197,13 @@ export function buildShiftReport(
       durationMinutes: number | null;
       endDelayMinutes: number;
       status: string;
+      kind?: string;
     }>;
   },
   breakDurationMinutes: number,
   endedAt: Date,
 ): ShiftReport {
-  const done = shift.breaks.filter((b) => ["COMPLETED", "LATE"].includes(b.status));
+  const done = shift.breaks.filter((b) => ["COMPLETED", "LATE"].includes(b.status) && b.kind !== "EMERGENCY");
   const lateBreaks = done.filter((b) => b.endDelayMinutes > 0).length;
   return {
     startedAt: shift.startedAt,
