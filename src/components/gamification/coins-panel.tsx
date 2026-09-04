@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Award, Coins, Flame, Gift, Trophy } from "lucide-react";
 import { BadgesGallery } from "@/components/gamification/badges-gallery";
 import { formatPersianNumber } from "@/lib/utils";
+import { useTransientMessage } from "@/lib/use-transient";
 import type { BadgeView } from "@/types";
 
 interface Me {
@@ -45,7 +46,7 @@ export function CoinsPanel({ refreshKey }: { refreshKey: number }) {
   const [rows, setRows] = useState<LbRow[]>([]);
   const [rewards, setRewards] = useState<Reward[]>([]);
   const [period, setPeriod] = useState<"day" | "week" | "month">("week");
-  const [msg, setMsg] = useState("");
+  const [msg, setMsg] = useTransientMessage();
   const [busy, setBusy] = useState(false);
 
   const load = useCallback(

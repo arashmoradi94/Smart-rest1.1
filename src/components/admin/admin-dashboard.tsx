@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { signOut } from "next-auth/react";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { useTransientMessage } from "@/lib/use-transient";
 import { ReportsTab } from "@/components/admin/reports-tab";
 import { AuditTab } from "@/components/admin/audit-tab";
 import { UsersTab } from "@/components/admin/users-tab";
@@ -68,22 +69,23 @@ function fmtCountdown(totalSeconds: number): string {
 
 type Tab = "live" | "groups" | "dinner" | "reports" | "audit" | "users" | "settings";
 
+/** Single transient alert slot: text + tone (drives banner color). */
+interface AdminAlert {
+  text: string;
+  kind: "error" | "success";
+}
+
 export function AdminDashboard({ adminName }: { adminName: string }) {
   const [state, setState] = useState<AdminDashboardState | null>(null);
   const [tab, setTab] = useState<Tab>("live");
   const [settingsForm, setSettingsForm] = useState<FullSettings | null>(null);
-  const [error, setError] = useState("");
-  const [msg, setMsg] = useState("");
+  const [alertMessage, setAlert, dismissAlert] = useTransientMessage<AdminAlert>();
+  const showError = useCallback((text: string) => setAlert({ text, kind: "error" }), [setAlert]);
+  const showSuccess = useCallback((text: string) => setAlert({ text, kind: "success" }), [setAlert]);
   const [busy, setBusy] = useState(false);
   const [announcement, setAnnouncement] = useState("");
-  const [notice, setNotice] = useState("");
   const [messageRecipient, setMessageRecipient] = useState<string | null>(null);
   const [directMessage, setDirectMessage] = useState("");
-
-  const flash = useCallback((m: string) => {
-    setNotice(m);
-    setTimeout(() => setNotice(""), 3000);
-  }, []);
 
   const fetchState = useCallback(async () => {
     try {
@@ -92,7 +94,7 @@ export function AdminDashboard({ adminName }: { adminName: string }) {
         // Stale session (e.g. admin account removed / DB rebuilt): force a
         // fresh login so the session binds to a user that exists again.
         if (r.status === 401) {
-          setError("نشست شما معتبر نیست؛ دوباره وارد شوید.");
+          showError("نشست شما معتبر نیست؛ دوباره وارد شوید.");
           void signOut({ callbackUrl: "/login" });
         }
         throw new Error();
@@ -101,7 +103,7 @@ export function AdminDashboard({ adminName }: { adminName: string }) {
     } catch {
       /* offline — SSE fallback keeps going */
     }
-  }, []);
+  }, [showError]);
 
   useEffect(() => {
     queueMicrotask(() => void fetchState());
@@ -121,8 +123,7 @@ export function AdminDashboard({ adminName }: { adminName: string }) {
   async function saveSettings() {
     if (!settingsForm || busy) return;
     setBusy(true);
-    setError("");
-    setMsg("");
+    setAlert("");
     try {
       const r = await fetch("/api/admin/settings", {
         method: "PUT",
@@ -130,13 +131,13 @@ export function AdminDashboard({ adminName }: { adminName: string }) {
         body: JSON.stringify(settingsForm),
       });
       const d = await r.json();
-      if (!r.ok) setError(d.error ?? "ذخیره ناموفق بود");
+      if (!r.ok) showError(d.error ?? "ذخیره ناموفق بود");
       else {
-        setMsg("تنظیمات ذخیره شد ✓");
+        showSuccess("تنظیمات ذخیره شد ✓");
         fetchState();
       }
     } catch {
-      setError("ارتباط برقرار نشد");
+      showError("ارتباط برقرار نشد");
     } finally {
       setBusy(false);
     }
@@ -145,8 +146,7 @@ export function AdminDashboard({ adminName }: { adminName: string }) {
   async function sendAnnouncement() {
     if (!announcement.trim() || busy) return;
     setBusy(true);
-    setError("");
-    setMsg("");
+    setAlert("");
     try {
       const r = await fetch("/api/admin/announcement", {
         method: "POST",
@@ -154,14 +154,14 @@ export function AdminDashboard({ adminName }: { adminName: string }) {
         body: JSON.stringify({ message: announcement }),
       });
       const d = await r.json();
-      if (!r.ok) setError(d.error ?? "ارسال ناموفق بود");
+      if (!r.ok) showError(d.error ?? "ارسال ناموفق بود");
       else {
-        setMsg("اطلاعیه ارسال شد ✓");
+        showSuccess("اطلاعیه ارسال شد ✓");
         setAnnouncement("");
       }
 
     } catch {
-      setError("ارتباط برقرار نشد");
+      showError("ارتباط برقرار نشد");
     } finally {
       setBusy(false);
     }
@@ -171,8 +171,7 @@ export function AdminDashboard({ adminName }: { adminName: string }) {
   async function sendDirectMessage() {
     if (!messageRecipient || !directMessage.trim() || busy) return;
     setBusy(true);
-    setError("");
-    setMsg("");
+    setAlert("");
     try {
       const r = await fetch("/api/admin/messages", {
         method: "POST",
@@ -180,14 +179,14 @@ export function AdminDashboard({ adminName }: { adminName: string }) {
         body: JSON.stringify({ recipientId: messageRecipient, message: directMessage }),
       });
       const d = await r.json();
-      if (!r.ok) setError(d.error ?? "ارسال پیام ناموفق بود");
+      if (!r.ok) showError(d.error ?? "ارسال پیام ناموفق بود");
       else {
-        setMsg("پیام مستقیم ارسال شد ✓");
+        showSuccess("پیام مستقیم ارسال شد ✓");
         setDirectMessage("");
         setMessageRecipient(null);
       }
     } catch {
-      setError("ارتباط برقرار نشد");
+      showError("ارتباط برقرار نشد");
     } finally {
       setBusy(false);
     }
@@ -204,10 +203,10 @@ export function AdminDashboard({ adminName }: { adminName: string }) {
         body: JSON.stringify({ userId, action }),
       });
       const d = await r.json();
-      if (!r.ok) setError(d.error ?? "عملیات ناموفق بود");
+      if (!r.ok) showError(d.error ?? "عملیات ناموفق بود");
       else fetchState();
     } catch {
-      setError("ارتباط برقرار نشد");
+      showError("ارتباط برقرار نشد");
     } finally {
       setBusy(false);
     }
@@ -223,13 +222,13 @@ export function AdminDashboard({ adminName }: { adminName: string }) {
         body: JSON.stringify({ breakId, action, minutes: 5 }),
       });
       const d = await r.json();
-      if (!r.ok) setError(d.error ?? "عملیات ناموفق بود");
+      if (!r.ok) showError(d.error ?? "عملیات ناموفق بود");
       else {
-        flash(action === "extend" ? "استراحت ۵ دقیقه تمدید شد ✓" : "استراحت لغو شد ✓");
+        showSuccess(action === "extend" ? "استراحت ۵ دقیقه تمدید شد ✓" : "استراحت لغو شد ✓");
         fetchState();
       }
     } catch {
-      setError("ارتباط برقرار نشد");
+      showError("ارتباط برقرار نشد");
     } finally {
       setBusy(false);
     }
@@ -243,8 +242,6 @@ export function AdminDashboard({ adminName }: { adminName: string }) {
     if (!ids.length) return "—";
     return ids.map((id) => buddyNameMap[id] ?? id).join("، ");
   }
-
-  const noticeText = notice || error || msg;
 
   return (
     <main className="mx-auto flex min-h-screen max-w-2xl flex-col gap-4 p-4 pb-8">
@@ -523,7 +520,7 @@ export function AdminDashboard({ adminName }: { adminName: string }) {
 
       {tab === "reports" && <ReportsTab />}
       {tab === "audit" && <AuditTab />}
-      {tab === "users" && <UsersTab onError={setError} onNotice={flash} />}
+      {tab === "users" && <UsersTab onError={showError} onNotice={showSuccess} />}
       {tab === "groups" && <GroupsTab timezone={state?.timezone} />}
       {tab === "dinner" && <DinnerTab />}
 
@@ -645,16 +642,24 @@ export function AdminDashboard({ adminName }: { adminName: string }) {
         </section>
       )}
 
-      {noticeText && (
+      {alertMessage && (
         <div
-          className="fixed inset-x-4 bottom-4 z-50 mx-auto max-w-md rounded-2xl px-4 py-3 text-center text-sm font-medium shadow-lg"
+          className="fixed inset-x-4 bottom-4 z-50 mx-auto flex max-w-md items-center justify-between gap-3 rounded-2xl px-4 py-3 text-center text-sm font-medium shadow-lg"
           style={{
-            background: error ? "var(--danger)" : "var(--working)",
+            background: alertMessage.kind === "error" ? "var(--danger)" : "var(--working)",
             color: "#fff",
           }}
           role="alert"
         >
-          {noticeText}
+          <span className="flex-1">{alertMessage.text}</span>
+          <button
+            type="button"
+            onClick={dismissAlert}
+            aria-label="بستن هشدار"
+            className="shrink-0 rounded-lg px-2 py-1 text-lg leading-none opacity-80 transition hover:opacity-100"
+          >
+            ×
+          </button>
         </div>
       )}
     </main>

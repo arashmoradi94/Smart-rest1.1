@@ -22,6 +22,7 @@ import { AnalyticsPanel } from "@/components/analytics-panel";
 import { BuddyPanel } from "@/components/buddy/buddy-panel";
 import { CoinsPanel } from "@/components/gamification/coins-panel";
 import { formatDuration, formatPersianNumber, formatPersianTime } from "@/lib/utils";
+import { useTransientMessage } from "@/lib/use-transient";
 import { useLiveRefresh } from "@/lib/use-live";
 import type { EmployeeDashboardState } from "@/types";
 
@@ -77,7 +78,7 @@ export function EmployeeDashboard({ userName }: { userName: string }) {
   const [state, setState] = useState<EmployeeDashboardState | null>(null);
   const offsetRef = useRef(0);
   const [clockOffset, setClockOffset] = useState(0);
-  const [error, setError] = useState("");
+  const [error, setError, dismissError] = useTransientMessage();
   const [busy, setBusy] = useState(false);
   const [offline, setOffline] = useState(false);
   const [confirmEnd, setConfirmEnd] = useState(false);
@@ -135,7 +136,7 @@ export function EmployeeDashboard({ userName }: { userName: string }) {
     } catch {
       setOffline(true);
     }
-  }, [apply]);
+  }, [apply, setError]);
 
   const fetchMessages = useCallback(async () => {
     try {
@@ -236,7 +237,7 @@ export function EmployeeDashboard({ userName }: { userName: string }) {
         setBusy(false);
       }
     },
-    [apply, busy],
+    [apply, busy, setError],
   );
 
   // Break notifications: early warning, start, end warning, end — fired once per event
@@ -693,11 +694,19 @@ export function EmployeeDashboard({ userName }: { userName: string }) {
 
       {error && (
         <div
-          className="fixed inset-x-4 bottom-4 z-50 mx-auto max-w-md rounded-2xl px-4 py-3 text-center text-sm font-medium shadow-lg"
+          className="fixed inset-x-4 bottom-4 z-50 mx-auto flex max-w-md items-center justify-between gap-3 rounded-2xl px-4 py-3 text-center text-sm font-medium shadow-lg"
           style={{ background: "var(--danger)", color: "#fff" }}
           role="alert"
         >
-          {error}
+          <span className="flex-1">{error}</span>
+          <button
+            type="button"
+            onClick={dismissError}
+            aria-label="بستن هشدار"
+            className="shrink-0 rounded-lg px-2 py-1 text-lg leading-none opacity-80 transition hover:opacity-100"
+          >
+            ×
+          </button>
         </div>
       )}
     </main>

@@ -4,12 +4,13 @@ import { useState } from "react";
 import { signIn } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import { Coffee, KeyRound, Loader2, LogIn, User } from "lucide-react";
+import { useTransientMessage } from "@/lib/use-transient";
 
 export default function LoginPage() {
   const router = useRouter();
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
-  const [error, setError] = useState("");
+  const [error, setError] = useTransientMessage();
   const [loading, setLoading] = useState(false);
 
   async function handleSubmit(e: React.FormEvent) {

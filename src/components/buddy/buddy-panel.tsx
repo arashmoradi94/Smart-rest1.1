@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Check, Coffee, Handshake, Loader2, Sparkles, Trash2, UserPlus, X } from "lucide-react";
 import { formatPersianNumber, formatPersianTime } from "@/lib/utils";
+import { useTransientMessage } from "@/lib/use-transient";
 import type { BuddyMatchView } from "@/types";
 
 interface BuddyData {
@@ -41,7 +42,7 @@ export function BuddyPanel({
   const [shiftPeers, setShiftPeers] = useState<Coworker[]>([]);
   const [inviting, setInviting] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [msg, setMsg] = useState("");
+  const [msg, setMsg] = useTransientMessage();
   const [picking, setPicking] = useState(false);
   const [dismissedMatches, setDismissedMatches] = useState<Set<string>>(new Set());
   const timer = useRef<ReturnType<typeof setInterval> | null>(null);
