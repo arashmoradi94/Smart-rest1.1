@@ -3,7 +3,7 @@ import { prisma } from "@/lib/db";
 import { addMinutes, AppError, diffMinutes } from "@/lib/utils";
 import { publishStates } from "@/lib/events";
 import { getSettings } from "@/services/settings-service";
-import { resolveBreakWithCapacity } from "@/services/break-scheduler";
+import { resolveBreakWithCapacity, isBreakWindowPassed, startWindowEnd } from "@/services/break-scheduler";
 import type { FullSettings, ShiftReport, UserStatus } from "@/types";
 
 type ShiftWithBreaks = Prisma.ShiftGetPayload<{ include: { breaks: true } }>;
@@ -48,15 +48,17 @@ export async function endShift(userId: string, now = new Date()) {
   const settings = await getSettings();
   const open = shift.breaks[shift.breaks.length - 1];
   if (open && (open.status === "ACTIVE" || open.status === "OVERTIME") && open.actualStart) {
-    // Closing the shift closes the running break with its FULL server-guaranteed
-    // duration (never the elapsed wall-clock at shift end being cut short).
+    // Shift end closes the running break with its ACTUAL elapsed duration
+    // (real timestamps), while endDelay keeps measuring lateness against the
+    // guaranteed fixed end.
     const fixedEnd = addMinutes(open.actualStart, settings.breakDurationMinutes + open.extendMinutes);
-    const endDelay = diffMinutes(now, fixedEnd);
+    const endDelay = Math.max(0, diffMinutes(now, fixedEnd));
+    const actualDuration = Math.max(0, Math.round((now.getTime() - open.actualStart.getTime()) / 60_000));
     await prisma.break.updateMany({
       where: { id: open.id, actualEnd: null },
       data: {
-        actualEnd: fixedEnd,
-        durationMinutes: settings.breakDurationMinutes + open.extendMinutes,
+        actualEnd: now,
+        durationMinutes: actualDuration,
         endDelayMinutes: endDelay,
         status: endDelay > 0 ? "LATE" : "COMPLETED",
       },
@@ -136,6 +138,16 @@ export async function ensureNextBreak(
   now: Date,
 ): Promise<void> {
   const regularBreaks = shift.breaks.filter((b) => b.kind !== "EMERGENCY");
+  // An untouched break whose start window has passed is finalised as EXPIRED
+  // (never skipped, never revived) before computing the next break.
+  const expired = regularBreaks.find((b) => isBreakWindowPassed(b, now));
+  if (expired) {
+    const res = await prisma.break.updateMany({
+      where: { id: expired.id, status: "SCHEDULED", actualStart: null, actualEnd: null },
+      data: { status: "EXPIRED", actualEnd: startWindowEnd(expired.scheduledEnd) },
+    });
+    if (res.count === 1) expired.status = "EXPIRED";
+  }
   const running = regularBreaks.find(
     (b) => b.status === "SCHEDULED" || b.status === "ACTIVE" || b.status === "OVERTIME",
   );

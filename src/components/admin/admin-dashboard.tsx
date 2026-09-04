@@ -261,7 +261,9 @@ export function AdminDashboard({ adminName }: { adminName: string }) {
         </div>
       </header>
 
-      <nav className="glass-card flex gap-1 overflow-x-auto rounded-2xl p-1" role="tablist">
+      {/* Tabs wrap instead of scrolling: nothing leaves the viewport on 320px
+          phones, while the desktop row (max-w-2xl) stays unchanged. */}
+      <nav className="glass-card flex flex-wrap gap-1 rounded-2xl p-1" role="tablist">
         {(
           [
             ["live", "زنده", Users],

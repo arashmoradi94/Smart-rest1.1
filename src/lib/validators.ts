@@ -6,7 +6,7 @@ import { AppError } from "@/lib/utils";
  * `validate()` turns failures into Persian AppErrors (HTTP 400).
  */
 
-const id = z.string().min(1).max(64);
+export const id = z.string().min(1).max(64);
 
 export const roleSchema = z.enum(["EMPLOYEE", "SUPERVISOR", "ADMIN"]);
 
@@ -101,6 +101,10 @@ export const pushSubscriptionSchema = z.object({
   endpoint: z.string().url("آدرس اشتراک نامعتبر است").max(500),
   keys: z.object({ p256dh: z.string().min(1), auth: z.string().min(1) }),
 });
+
+export const breakRequestSchema = z.object({ recipientId: id });
+
+export const breakRequestRespondSchema = z.object({ requestId: id, accept: z.boolean() });
 
 /** Parse with a schema or throw a 400 AppError carrying the first issue. */
 export function validate<T extends z.ZodType>(schema: T, data: unknown): z.output<T> {

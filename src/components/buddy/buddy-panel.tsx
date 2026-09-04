@@ -20,6 +20,10 @@ interface Coworker {
   id: string;
   name: string;
 }
+interface BreakInviteData {
+  incoming: Array<{ id: string; from: string; fromId: string; createdAt: string }>;
+  outgoing: Array<{ id: string; to: string; toId: string; createdAt: string }>;
+}
 
 export function BuddyPanel({
   userStatus,
@@ -33,6 +37,9 @@ export function BuddyPanel({
   const [data, setData] = useState<BuddyData | null>(null);
   const [group, setGroup] = useState<GroupStatus | null>(null);
   const [coworkers, setCoworkers] = useState<Coworker[]>([]);
+  const [invites, setInvites] = useState<BreakInviteData>({ incoming: [], outgoing: [] });
+  const [shiftPeers, setShiftPeers] = useState<Coworker[]>([]);
+  const [inviting, setInviting] = useState(false);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
   const [picking, setPicking] = useState(false);
@@ -45,6 +52,8 @@ export function BuddyPanel({
       if (r.ok) setData(await r.json());
       const g = await fetch("/api/buddy/group/status", { cache: "no-store" });
       setGroup(g.ok ? await g.json() : null);
+      const i = await fetch("/api/break-request", { cache: "no-store" });
+      if (i.ok) setInvites(await i.json());
     } catch {}
   }, []);
 
@@ -53,6 +62,10 @@ export function BuddyPanel({
     fetch("/api/coworkers", { cache: "no-store" })
       .then((r) => (r.ok ? r.json() : []))
       .then((users: Coworker[]) => setCoworkers(users))
+      .catch(() => {});
+    fetch("/api/break-request/coworkers", { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : []))
+      .then((users: Coworker[]) => setShiftPeers(users))
       .catch(() => {});
   }, [load]);
 
@@ -142,6 +155,96 @@ export function BuddyPanel({
             </li>
           ))}
         </ul>
+      )}
+
+      {/* Same-shift break invitations */}
+      {(invites.incoming.length > 0 || invites.outgoing.length > 0 || inviting) && (
+        <div className="flex flex-col gap-2">
+          <p className="text-xs font-bold">☕ دعوت استراحت همزمان</p>
+          {invites.incoming.map((r) => (
+            <div
+              key={r.id}
+              className="flex items-center justify-between gap-2 rounded-xl px-3 py-2.5 text-sm"
+              style={{ background: "rgba(245,158,11,.1)" }}
+            >
+              <span className="min-w-0">
+                <b>{r.from}</b> از شما خواست همزمان استراحت کنید
+              </span>
+              <span className="flex shrink-0 gap-1.5">
+                <button
+                  onClick={() =>
+                    act(post("/api/break-request/respond", { requestId: r.id, accept: true }), "دعوت پذیرفته شد ✓")
+                  }
+                  disabled={busy}
+                  className="rounded-lg px-2.5 py-1.5 text-xs font-bold text-white disabled:opacity-50"
+                  style={{ background: "var(--working)" }}
+                  aria-label={`پذیرش دعوت ${r.from}`}
+                >
+                  می‌آیم
+                </button>
+                <button
+                  onClick={() =>
+                    act(post("/api/break-request/respond", { requestId: r.id, accept: false }), "دعوت رد شد")
+                  }
+                  disabled={busy}
+                  className="rounded-lg px-2.5 py-1.5 text-xs font-bold text-white disabled:opacity-50"
+                  style={{ background: "var(--muted)" }}
+                  aria-label={`رد دعوت ${r.from}`}
+                >
+                  نه
+                </button>
+              </span>
+            </div>
+          ))}
+          {invites.outgoing.map((r) => (
+            <div
+              key={r.id}
+              className="flex items-center justify-between gap-2 rounded-xl px-3 py-2 text-xs"
+              style={{ background: "rgba(148,163,184,.08)" }}
+            >
+              <span>
+                در انتظار پاسخ <b>{r.to}</b>…
+              </span>
+              <button
+                onClick={() => act(post("/api/break-request/cancel", { requestId: r.id }), "دعوت لغو شد")}
+                disabled={busy}
+                className="rounded-lg px-2.5 py-1.5 text-xs font-bold disabled:opacity-50"
+                style={{ background: "rgba(239,68,68,.1)", color: "var(--danger)" }}
+                aria-label={`لغو دعوت ${r.to}`}
+              >
+                لغو
+              </button>
+            </div>
+          ))}
+          {inviting && (
+            <ul className="flex max-h-40 flex-col gap-1 overflow-y-auto rounded-xl p-2" style={{ background: "rgba(148,163,184,.08)" }}>
+              {shiftPeers.length === 0 && (
+                <li className="px-1 py-1.5 text-xs" style={{ color: "var(--muted)" }}>
+                  هم‌شیفت آنلاینی برای دعوت وجود ندارد.
+                </li>
+              )}
+              {shiftPeers
+                .filter((c) => !invites.outgoing.some((o) => o.toId === c.id))
+                .map((c) => (
+                  <li key={c.id} className="flex items-center justify-between text-sm">
+                    <span>{c.name}</span>
+                    <button
+                      onClick={() =>
+                        act(post("/api/break-request", { recipientId: c.id }), "دعوت ارسال شد ✓").then(() =>
+                          setInviting(false),
+                        )
+                      }
+                      disabled={busy}
+                      className="rounded-lg px-3 py-1.5 text-xs font-bold text-white disabled:opacity-50"
+                      style={{ background: "var(--break)" }}
+                    >
+                      دعوت به استراحت
+                    </button>
+                  </li>
+                ))}
+            </ul>
+          )}
+        </div>
       )}
 
       {/* Confirmed buddies */}
@@ -296,6 +399,17 @@ export function BuddyPanel({
         >
           ☕ استراحت گروهی شروع شد — از تایمر اصلی استفاده کن
         </div>
+      )}
+
+      {userStatus === "WORKING" && !group && (
+        <button
+          onClick={() => setInviting((v) => !v)}
+          disabled={busy}
+          className="rounded-xl py-2.5 text-sm font-bold disabled:opacity-60"
+          style={{ background: "rgba(245,158,11,.1)", color: "var(--warning)" }}
+        >
+          ☕ دعوت هم‌شیفتی به استراحت همزمان
+        </button>
       )}
 
       {userStatus === "WORKING" && data.buddies.length > 0 && !group && (

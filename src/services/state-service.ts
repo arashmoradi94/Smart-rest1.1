@@ -4,6 +4,7 @@ import { addMinutes, diffSeconds, formatPersianNumber, formatPersianTime } from 
 import { companyDayKey } from "@/lib/time";
 import { getSettings } from "@/services/settings-service";
 import { autoAdvance, buildShiftReport, ensureNextBreak, getActiveShift } from "@/services/shift-service";
+import { startWindowEnd } from "@/services/break-scheduler";
 import { getGroupBreakStatus } from "@/services/buddy-service";
 import { dinnerView, getTodayDinner } from "@/services/dinner-service";
 import type { BreakHistoryItem, EmployeeDashboardState, TimelineEvent } from "@/types";
@@ -78,6 +79,13 @@ function buildTimeline(shift: ShiftRow, timeZone?: string): TimelineEvent[] {
         time: formatPersianTime(b.actualStart, timeZone),
         label: `شروع استراحت ${formatPersianNumber(b.breakIndex + 1)}${b.groupBreakId ? " (گروهی)" : ""}`,
         icon: "☕",
+        type: "break",
+      });
+    } else if (b.status === "EXPIRED") {
+      events.push({
+        time: formatPersianTime(b.scheduledStart, timeZone),
+        label: `استراحت ${formatPersianNumber(b.breakIndex + 1)} منقضی شد`,
+        icon: "⏰",
         type: "break",
       });
     } else if (b.status === "CANCELLED" || b.status === "SKIPPED") {
@@ -242,7 +250,11 @@ export async function getEmployeeState(
     };
   }
 
-  const next = open?.status === "SCHEDULED" ? open : undefined;
+  // Find the scheduled break wherever it sits in the index order: an EMERGENCY
+  // break is always appended AFTER the regular break, so "last break" is the
+  // (completed) emergency right after one — the still-valid scheduled break
+  // must still drive the work timer and the start-break button.
+  const next = shift.breaks.find((b) => b.status === "SCHEDULED" && b.kind !== "EMERGENCY");
   const group = await getGroupBreakStatus(userId);
   const waitingBuddy =
     (group?.status === "FORMING" || group?.status === "DELAYED") &&
@@ -259,7 +271,8 @@ export async function getEmployeeState(
       ? {
           scheduledStart: next.scheduledStart.toISOString(),
           scheduledEnd: next.scheduledEnd.toISOString(),
-          ready: now >= next.scheduledStart,
+          // "ready" only inside the start window; an expired break is never ready
+          ready: now >= next.scheduledStart && now < startWindowEnd(next.scheduledEnd),
         }
       : undefined,
     groupBreak: group ?? undefined,

@@ -11,14 +11,17 @@ export type ShiftStatus = "ACTIVE" | "ENDED";
 /**
  * Break lifecycle. READY is a client-facing hint for "SCHEDULED break whose
  * window has arrived"; WAIT_BUDDY marks a group break forming. OVERTIME is the
- * ACTIVE-break-past-end state. SKIPPED is kept as a legacy alias of CANCELLED.
+ * ACTIVE-break-past-end state; LATE is a completed break whose ACTUAL return
+ * happened after its fixed end. SKIPPED is kept as a legacy alias of CANCELLED.
  */
 export type BreakStatus =
   | "SCHEDULED"
   | "ACTIVE"
   | "COMPLETED"
+  | "LATE"
   | "OVERTIME"
   | "CANCELLED"
+  | "EXPIRED"
   | "SKIPPED"; // legacy alias, read as CANCELLED
 
 export type BreakKind = "REGULAR" | "DINNER" | "EMERGENCY";

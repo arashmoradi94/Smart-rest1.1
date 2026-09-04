@@ -83,10 +83,15 @@ export async function getAdminState(now = new Date()): Promise<AdminDashboardSta
           };
           delayMinutes = open.startDelayMinutes;
           countdownSeconds = diffSeconds(endsAt, now);
-        } else if (open?.status === "SCHEDULED") {
-          status = u.onCall ? "ON_CALL" : "WORKING";
-          nextBreakAt = open.scheduledStart.toISOString();
-          countdownSeconds = diffSeconds(open.scheduledStart, now);
+        } else {
+          // The scheduled break can sit BEFORE a completed emergency break in
+          // the index order — find it wherever it is (see state-service).
+          const scheduled = shift.breaks.find((b) => b.status === "SCHEDULED" && b.kind !== "EMERGENCY");
+          if (scheduled) {
+            status = u.onCall ? "ON_CALL" : "WORKING";
+            nextBreakAt = scheduled.scheduledStart.toISOString();
+            countdownSeconds = diffSeconds(scheduled.scheduledStart, now);
+          }
         }
         if (!currentBreak) delayMinutes = done.reduce((sum, b) => sum + b.endDelayMinutes, 0);
       } else {
@@ -358,7 +363,13 @@ export async function getTeamAnalytics(
       select: { id: true, userId: true, startedAt: true, endedAt: true, status: true },
     }),
     prisma.break.findMany({
-      where: { shift: { startedAt: { gte: since } }, status: { in: ["COMPLETED", "LATE"] } },
+      where: {
+        shift: { startedAt: { gte: since } },
+        status: { in: ["COMPLETED", "LATE"] },
+        // Emergency breaks are tracked separately — they never blend into the
+        // regular break metrics (duration/latency/peaks).
+        kind: { not: "EMERGENCY" },
+      },
       select: {
         userId: true, durationMinutes: true, endDelayMinutes: true, actualStart: true, status: true,
         user: { select: { name: true } },

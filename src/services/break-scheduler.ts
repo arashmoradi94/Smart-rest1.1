@@ -57,6 +57,46 @@ export function calculateStartDelay(scheduledStart: Date, actualStart: Date): nu
   return diffMinutes(actualStart, scheduledStart);
 }
 
+/**
+ * Break start window (business rule):
+ *  - before scheduledStart          → EARLY (rejected)
+ *  - [scheduledStart, scheduledEnd) → ON_TIME (the same break is consumed)
+ *  - from scheduledEnd onwards      → EXPIRED (rejected; next break is scheduled)
+ * A SCHEDULED break is never auto-started, never skipped and never revived
+ * after expiring — on every state visit it is finalised as EXPIRED and the
+ * following break is computed from its window end.
+ */
+export const BREAK_START_GRACE_MINUTES = 0;
+
+export type BreakStartStatus = "EARLY" | "ON_TIME" | "EXPIRED";
+
+/** End of the start window: the last instant at which starting is allowed. */
+export function startWindowEnd(scheduledEnd: Date): Date {
+  return addMinutes(scheduledEnd, BREAK_START_GRACE_MINUTES);
+}
+
+export function calculateStartStatus(
+  scheduledStart: Date,
+  scheduledEnd: Date,
+  now: Date,
+): { status: BreakStartStatus; startDelayMinutes: number } {
+  if (now < scheduledStart) return { status: "EARLY", startDelayMinutes: 0 };
+  const startDelayMinutes = Math.max(0, calculateStartDelay(scheduledStart, now));
+  if (now.getTime() < startWindowEnd(scheduledEnd).getTime()) {
+    return { status: "ON_TIME", startDelayMinutes };
+  }
+  return { status: "EXPIRED", startDelayMinutes };
+}
+
+/** A SCHEDULED break whose start window has fully passed. */
+export function isBreakWindowPassed(
+  brk: { status: string; actualStart: Date | null; scheduledEnd: Date },
+  now: Date,
+): boolean {
+  return brk.status === "SCHEDULED" && brk.actualStart === null && now.getTime() >= startWindowEnd(brk.scheduledEnd).getTime();
+}
+
+
 export function calculateBreakDuration(actualStart: Date, actualEnd: Date): number {
   return diffMinutes(actualEnd, actualStart);
 }

@@ -46,6 +46,10 @@ next-env.d.ts
 # temp test database
 tmp-test.db*
 
+# temp test/QA databases and scratch artifacts
+tmp-test*.db*
+tmp-qa*
+
 # local debug artifacts & db backups
 dev.db.bak*
 dbg.db

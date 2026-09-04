@@ -30,6 +30,26 @@ model User {
   pushSubscriptions PushSubscription[]
   sentDirectMessages DirectMessage[] @relation("DirectMessageSender")
   receivedDirectMessages DirectMessage[] @relation("DirectMessageRecipient")
+  sentBreakRequests BreakRequest[] @relation("BreakRequestSender")
+  receivedBreakRequests BreakRequest[] @relation("BreakRequestRecipient")
+}
+
+model BreakRequest {
+  id          String    @id @default(cuid())
+  senderId    String
+  recipientId String
+  status      String    @default("PENDING")
+  createdAt   DateTime  @default(now())
+  respondedAt DateTime?
+
+  sender   User @relation("BreakRequestSender", fields: [senderId], references: [id], onDelete: Cascade)
+  recipient User @relation("BreakRequestRecipient", fields: [recipientId], references: [id], onDelete: Cascade)
+
+  // One row per (sender, recipient) pair — like BuddyRequest. A resolved row
+  // is flipped back to PENDING by a fresh invitation instead of duplicating.
+  @@unique([senderId, recipientId])
+  @@index([recipientId, status, createdAt])
+  @@index([senderId, status, createdAt])
 }
 
 model DirectMessage {

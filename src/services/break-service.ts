@@ -1,15 +1,16 @@
 import { prisma } from "@/lib/db";
 import { addMinutes, AppError } from "@/lib/utils";
 import { publishStates } from "@/lib/events";
-import { calculateEndDelay, calculateStartDelay } from "@/services/break-scheduler";
+import { calculateEndDelay, calculateStartStatus, calculateBreakDuration } from "@/services/break-scheduler";
 import { getSettings } from "@/services/settings-service";
 import { ensureNextBreak, getActiveShift } from "@/services/shift-service";
 
 /**
  * All start/return transitions are server-side, atomic (conditional updateMany
- * inside a transaction) and based on ServerTime. scheduledStart/scheduledEnd
- * are only suggestions: a break never auto-starts and never auto-ends; the
- * user (or an admin override) drives every transition.
+ * inside a transaction) and based on ServerTime. A break never auto-starts and
+ * never auto-ends; the user (or an admin override) drives every transition, but
+ * starting is only accepted inside the break's start window — see
+ * calculateStartStatus in break-scheduler.
  */
 
 /** LIVE break states: the running break either within or past its fixed end. */
@@ -43,16 +44,40 @@ export async function startBreak(userId: string, now = new Date(), opts?: { forc
   let shift = await getActiveShift(userId);
   if (!shift) throw new AppError("ابتدا شیفت خود را شروع کنید", 409);
 
-  await ensureNextBreak(shift, settings, now);
-  shift = (await getActiveShift(userId))!;
+  // A running break (regular OR emergency) always blocks another start.
+  const running = shift.breaks.find((b) => b.status === "ACTIVE" || b.status === "OVERTIME");
+  if (running) throw new AppError("شما هم‌اکنون در استراحت هستید", 409);
 
-  const open = shift.breaks[shift.breaks.length - 1];
-  if (open && (open.status === "ACTIVE" || open.status === "OVERTIME")) {
-    throw new AppError("شما هم‌اکنون در استراحت هستید", 409);
+  // The break to consume is the SCHEDULED regular break WHEREVER it sits in
+  // the index order: an EMERGENCY break is always appended AFTER it, so
+  // "last break" would wrongly point at the completed emergency right after
+  // one and hide the still-valid regular break.
+  let open = shift.breaks.find((b) => b.status === "SCHEDULED" && b.kind !== "EMERGENCY");
+
+  if (!open) {
+    // No SCHEDULED break yet (e.g. the call arrives right after the previous
+    // one completed): the scheduler finalises expired windows and plans the
+    // next break, then the window rules below still decide.
+    await ensureNextBreak(shift, settings, now);
+    shift = (await getActiveShift(userId))!;
+    open = shift.breaks.find((b) => b.status === "SCHEDULED" && b.kind !== "EMERGENCY");
+    if (!open) throw new AppError("استراحت برنامه‌ریزی‌شده‌ای برای شما وجود ندارد", 409);
   }
 
-  if (!open || open.status !== "SCHEDULED") {
-    throw new AppError("استراحت برنامه‌ریزی‌شده‌ای برای شما وجود ندارد", 409);
+  // Server-side window enforcement (never trust the client):
+  //  - EARLY   → before scheduledStart: rejected
+  //  - ON_TIME → inside [scheduledStart, scheduledEnd): the same break is consumed
+  //  - EXPIRED → from scheduledEnd onwards: the break is finalised as EXPIRED
+  //              (never revived) and the following break is computed from the
+  //              window end; the call is rejected with 410, so an expired
+  //              break can never be consumed — not even via a direct API call.
+  const startWindow = calculateStartStatus(open.scheduledStart, open.scheduledEnd, now);
+  if (startWindow.status === "EXPIRED") {
+    await ensureNextBreak(shift, settings, now);
+    throw new AppError("پنجرهٔ زمانی این استراحت به پایان رسیده است", 410);
+  }
+  if (startWindow.status === "EARLY") {
+    throw new AppError("زمان این استراحت هنوز فرا نرسیده است", 409);
   }
 
   // A break linked to a forming group must go through the buddy flow so every
@@ -75,7 +100,7 @@ export async function startBreak(userId: string, now = new Date(), opts?: { forc
     if (activeCount >= settings.maxConcurrentBreaks) {
       throw new AppError("ظرفیت استراحت همزمان تکمیل است؛ چند لحظه دیگر تلاش کنید", 409);
     }
-    const startDelayMinutes = calculateStartDelay(open.scheduledStart, now);
+    const startDelayMinutes = startWindow.startDelayMinutes;
     const res = await tx.break.updateMany({
       where: { id: open.id, status: "SCHEDULED", actualStart: null, actualEnd: null },
       data: { actualStart: now, status: "ACTIVE", startDelayMinutes },
@@ -175,16 +200,19 @@ export async function returnToWork(userId: string, now = new Date()) {
     return getEmployeeState(userId, now);
   }
 
-  // Server rule: the break ALWAYS gets its full duration from actualStart
-  // (+ admin-granted extension). Starting late never shortens it.
+  // ACTUAL duration rule: the recorded duration is the real elapsed time
+  // (actualEnd - actualStart), never forced to the scheduled length.
+  // endDelay measures lateness vs the guaranteed (fixed) end; an early return
+  // is simply COMPLETED with the shorter actual duration.
   const fixedEnd = addMinutes(open.actualStart, settings.breakDurationMinutes + open.extendMinutes);
-  const endDelay = calculateEndDelay(fixedEnd, now);
+  const actualDurationMinutes = Math.max(0, calculateBreakDuration(open.actualStart, now));
+  const endDelay = Math.max(0, calculateEndDelay(fixedEnd, now));
   const ended = await prisma.$transaction(async (tx) => {
     const res = await tx.break.updateMany({
       where: { id: open.id, status: { in: ["ACTIVE", "OVERTIME"] }, actualStart: { not: null }, actualEnd: null },
       data: {
-        actualEnd: fixedEnd,
-        durationMinutes: settings.breakDurationMinutes + open.extendMinutes,
+        actualEnd: now,
+        durationMinutes: actualDurationMinutes,
         endDelayMinutes: endDelay,
         status: endDelay > 0 ? "LATE" : "COMPLETED",
       },

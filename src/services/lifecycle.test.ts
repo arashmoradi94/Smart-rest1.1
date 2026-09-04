@@ -85,25 +85,32 @@ describe("Shift lifecycle (integration, temp db)", () => {
     await expect(shiftSvc.startShift(ids.ali, at(T0, 1))).rejects.toMatchObject({ status: 409 });
   });
 
-  it("break starts manually before the suggestion and runs for the full duration", async () => {
-    const state = await breakSvc.startBreak(ids.ali, at(T0, 59));
+  it("break cannot start before its window (backend rejects early start)", async () => {
+    // break is scheduled for T0+60 — starting at T0+59 must be rejected
+    await expect(breakSvc.startBreak(ids.ali, at(T0, 59))).rejects.toMatchObject({ status: 409 });
+  });
+
+  it("break starts inside the window and runs for the full duration", async () => {
+    const state = await breakSvc.startBreak(ids.ali, at(T0, 60));
     expect(state.userStatus).toBe("ON_BREAK");
     expect(state.currentBreak?.status).toBe("ACTIVE");
     expect(state.timerSeconds).toBe(600);
   });
 
   it("duplicate break start and return are rejected", async () => {
-    await expect(breakSvc.startBreak(ids.ali, at(T0, 61))).rejects.toMatchObject({ status: 409 });
+    await expect(breakSvc.startBreak(ids.ali, at(T0, 63))).rejects.toMatchObject({ status: 409 });
   });
 
-  it("late return: delay=3, full duration, next break follows actual end", async () => {
-    const state = await breakSvc.returnToWork(ids.ali, at(T0, 72));
+  it("late return: actual duration 13m recorded, next break follows actual end", async () => {
+    // started at T0+60 → fixed end T0+70; returning at T0+73 → actual 13m, 3m late
+    const state = await breakSvc.returnToWork(ids.ali, at(T0, 73));
     expect(state.userStatus).toBe("WORKING");
     expect(state.stats.breakCount).toBe(1);
-    expect(state.stats.totalBreakMinutes).toBe(10);
+    expect(state.stats.totalBreakMinutes).toBe(13); // ACTUAL elapsed, not scheduled 10
     expect(state.stats.totalDelayMinutes).toBe(3);
     expect(state.stats.lateBreaks).toBe(1);
-    expect(state.nextBreak?.scheduledStart).toBe(at(T0, 129).toISOString());
+    // next work cycle anchored to the ACTUAL end (T0+73) + 60m work
+    expect(state.nextBreak?.scheduledStart).toBe(at(T0, 133).toISOString());
     await expect(breakSvc.returnToWork(ids.ali, at(T0, 74))).rejects.toMatchObject({ status: 409 });
   });
 
@@ -114,7 +121,7 @@ describe("Shift lifecycle (integration, temp db)", () => {
     expect(a.userStatus).toBe("WORKING");
   });
 
-  it("scheduled end does not skip an unstarted break (scoped to the live shift)", async () => {
+  it("expired break is finalised (never revived) and the next break is computed", async () => {
     const state = await stateSvc.getEmployeeState(ids.ali, at(T0, 145));
     expect(state.userStatus).toBe("WORKING");
     // Scope to ali's CURRENT shift: legacy SKIPPED rows from dev.db must not affect this
@@ -125,9 +132,14 @@ describe("Shift lifecycle (integration, temp db)", () => {
       where: { shiftId: shift!.id, status: "SKIPPED" },
     });
     expect(brk).toBeNull();
-    // the 129-scheduled break is still there, untouched — never skipped, never moved
-    expect(state.nextBreak?.scheduledStart).toBe(at(T0, 129).toISOString());
-    expect(state.nextBreak?.ready).toBe(true); // window arrived → READY hint
+    // the 133-scheduled break (window 133→143) expired at 143 — never revived
+    const expiredBreak = await db.prisma.break.findFirst({
+      where: { shiftId: shift!.id, status: "EXPIRED" },
+    });
+    expect(expiredBreak?.actualEnd?.getTime()).toBe(at(T0, 143).getTime());
+    // the next break is computed from the expired window end (+60m work)
+    expect(state.nextBreak?.scheduledStart).toBe(at(T0, 203).toISOString());
+    expect(state.nextBreak?.ready).toBe(false); // future break → window not open
   });
 
   it("smart scheduling staggers concurrent starts fairly", async () => {
@@ -164,12 +176,13 @@ describe("Shift lifecycle (integration, temp db)", () => {
     await expect(breakSvc.startBreak(ids.ali, at(T0, 210))).rejects.toMatchObject({ status: 409 });
   });
 
-  it("end shift closes active break and produces full report", async () => {
+  it("end shift closes active break with its ACTUAL duration and produces full report", async () => {
     const state = await shiftSvc.endShift(ids.mohammad, at(T0, 215));
     expect(state.hasActiveShift).toBe(false);
     expect(state.shiftEnded).toBe(true);
     expect(state.report?.breakCount).toBe(1);
-    expect(state.report?.actualBreakMinutes).toBe(10);
+    // break ran [T0+210, T0+215) → ACTUAL 5 minutes (not the scheduled 10)
+    expect(state.report?.actualBreakMinutes).toBe(5);
     expect(state.report?.totalDelayMinutes).toBe(0);
     expect(state.timeline.at(-1)?.type).toBe("shift_end");
     await expect(shiftSvc.endShift(ids.mohammad, at(T0, 216))).rejects.toMatchObject({ status: 409 });
@@ -211,46 +224,46 @@ describe("Production core scenario: 16:00 scheduled + 16:07 actualStart => 16:17
     expect(state.currentBreak?.status).toBe("ACTIVE");
   });
 
-  it("return at 16:20 → actualEnd is exactly 16:17, delay=3, next cycle from 16:17", async () => {
+  it("return at 16:20 → actualEnd 16:20, duration 13m, delay=3, next cycle from actual end", async () => {
     const state = await breakSvc.returnToWork(ids.lateuser, at(S, 80)); // 16:20
     expect(state.userStatus).toBe("WORKING");
-    expect(state.stats.totalDelayMinutes).toBe(3);
-    expect(state.stats.totalBreakMinutes).toBe(10);
-    // next work cycle anchored to actualEnd 16:17 (+60m work)
-    expect(state.nextBreak?.scheduledStart).toBe(at(S, 137).toISOString()); // 17:17
+    expect(state.stats.totalDelayMinutes).toBe(3); // 3m past the fixed end 16:17
+    expect(state.stats.totalBreakMinutes).toBe(13); // ACTUAL elapsed 16:07→16:20
+    // next work cycle anchored to actualEnd 16:20 (+60m work)
+    expect(state.nextBreak?.scheduledStart).toBe(at(S, 140).toISOString()); // 17:20
     const brk = await db.prisma.break.findFirst({
       where: { userId: ids.lateuser, actualStart: at(S, 67) },
     });
-    expect(brk?.actualEnd?.toISOString()).toBe(at(S, 77).toISOString()); // 16:17
-    expect(brk?.durationMinutes).toBe(10);
+    expect(brk?.actualEnd?.toISOString()).toBe(at(S, 80).toISOString()); // 16:20 real return
+    expect(brk?.durationMinutes).toBe(13);
     expect(brk?.endDelayMinutes).toBe(3);
-    expect(["COMPLETED", "LATE"]).toContain(brk?.status);
+    expect(brk?.status).toBe("LATE");
   });
 
   it("OVERTIME: no return past the fixed end → OVERTIME status, refresh-stable", async () => {
-    // Start a second break at 17:17+2m, never return, then jump past 17:27+5
-    await breakSvc.startBreak(ids.lateuser, at(S, 139));
+    // Start a second break at 17:20 (window open), never return, then jump past 17:30+5
+    await breakSvc.startBreak(ids.lateuser, at(S, 140));
     let state = await stateSvc.getEmployeeState(ids.lateuser, at(S, 146)); // mid break
     expect(state.currentBreak?.status).toBe("ACTIVE");
-    state = await stateSvc.getEmployeeState(ids.lateuser, at(S, 152)); // 17:32 → 5m overdue
+    state = await stateSvc.getEmployeeState(ids.lateuser, at(S, 152)); // 17:32 → 2m overdue
     expect(state.currentBreak?.status).toBe("OVERTIME");
     expect(state.userStatus).toBe("LATE");
     // refresh-safe: stable on repeat
     const again = await stateSvc.getEmployeeState(ids.lateuser, at(S, 152));
     expect(again.currentBreak?.status).toBe("OVERTIME");
-    // returning after overtime records delay, full duration preserved
+    // returning after overtime records delay and the real elapsed duration
     const done = await breakSvc.returnToWork(ids.lateuser, at(S, 155));
     expect(done.stats.totalDelayMinutes).toBeGreaterThanOrEqual(3);
     const brk = await db.prisma.break.findFirst({
-      where: { userId: ids.lateuser, actualStart: at(S, 139) },
+      where: { userId: ids.lateuser, actualStart: at(S, 140) },
     });
-    expect(brk?.durationMinutes).toBe(10);
+    expect(brk?.durationMinutes).toBe(15); // ACTUAL elapsed 17:20→17:35
     await shiftSvc.endShift(ids.lateuser, at(S, 200));
   });
 });
 
 describe("Admin overrides: extend / cancel / grant / audit", () => {
-  it("extends a running break by 5 minutes (end shifts, full duration preserved)", async () => {
+  it("extends a running break by 5 minutes (timer end shifts, actual duration still real)", async () => {
     // Close the manual ACTIVE breaks opened by the capacity test above
     await db.prisma.break.updateMany({
       where: { actualStart: { not: null }, actualEnd: null },
@@ -263,11 +276,11 @@ describe("Admin overrides: extend / cancel / grant / audit", () => {
       where: { userId: ids.u1, status: "ACTIVE" },
     });
     await breakSvc.extendBreak(ids.admin, running!.id, 5);
-    // 15 minutes total from actualStart
+    // extension pushes the fixed end to actualStart+15 → overtime/lateness measured from there
     const state = await stateSvc.getEmployeeState(ids.u1, at(T0, 370));
     expect(state.currentBreak?.endsAt).toBe(at(T0, 375).toISOString());
     const done = await breakSvc.returnToWork(ids.u1, at(T0, 371));
-    expect(done.stats.totalBreakMinutes).toBeGreaterThanOrEqual(15);
+    expect(done.stats.totalBreakMinutes).toBe(11); // ACTUAL elapsed T0+360→T0+371
     await shiftSvc.endShift(ids.u1, at(T0, 380));
   });
 
@@ -445,6 +458,55 @@ describe("Buddy system + group break sync", () => {
     await shiftSvc.endShift(ids.u1, at(N0, 90));
     await shiftSvc.endShift(ids.u2, at(N0, 90));
     await db.prisma.buddyLink.deleteMany({});
+  });
+});
+
+describe("Emergency break → work timer survives", () => {
+  it("after an emergency ends, the same shift's scheduled break still drives the work timer", async () => {
+    // E0=09:00 shift → break scheduled 10:00. Emergency 09:25→09:30 must not
+    // hide the work timer, reset the shift, or create a new shift.
+    await shiftSvc.endShift(ids.nima).catch(() => {});
+    const E0 = new Date("2026-08-24T09:00:00.000Z");
+    await shiftSvc.startShift(ids.nima, E0);
+    // before the emergency the work timer is active (countdown to next break)
+    let st = await stateSvc.getEmployeeState(ids.nima, at(E0, 20));
+    expect(st.userStatus).toBe("WORKING");
+    expect(st.nextBreak?.scheduledStart).toBe(at(E0, 60).toISOString());
+    // during the emergency the status is EMERGENCY
+    await breakSvc.startEmergencyBreak(ids.nima, "URGENT_REST", undefined, at(E0, 25));
+    st = await stateSvc.getEmployeeState(ids.nima, at(E0, 27));
+    expect(st.userStatus).toBe("EMERGENCY");
+    // emergency ends → WORKING, timer visible again, anchored to backend timestamps
+    st = await breakSvc.returnToWork(ids.nima, at(E0, 30));
+    expect(st.userStatus).toBe("WORKING");
+    expect(st.nextBreak?.scheduledStart).toBe(at(E0, 60).toISOString());
+    expect(st.timerSeconds).toBe(30 * 60);
+    // the same shift, same start timestamp — no new shift was created
+    const shifts = await db.prisma.shift.findMany({
+      where: { userId: ids.nima, status: "ACTIVE" },
+    });
+    expect(shifts.length).toBe(1);
+    expect(shifts[0].startedAt.getTime()).toBe(E0.getTime());
+    // refresh-safe and login-safe: recomputed from the backend, never zero
+    const refreshed = await stateSvc.getEmployeeState(ids.nima, at(E0, 31));
+    expect(refreshed.userStatus).toBe("WORKING");
+    expect(refreshed.nextBreak?.scheduledStart).toBe(at(E0, 60).toISOString());
+    expect(refreshed.timerSeconds).toBe(29 * 60);
+    await shiftSvc.endShift(ids.nima, at(E0, 90));
+  });
+
+  it("emergency duration is tracked separately from regular breaks", async () => {
+    await shiftSvc.endShift(ids.nima).catch(() => {});
+    const E0 = new Date("2026-08-24T09:00:00.000Z");
+    await shiftSvc.startShift(ids.nima, E0);
+    await breakSvc.startEmergencyBreak(ids.nima, "ILLNESS", undefined, at(E0, 10));
+    const st = await breakSvc.returnToWork(ids.nima, at(E0, 16));
+    expect(st.userStatus).toBe("WORKING");
+    // 6-minute emergency: regular break stats untouched, next break unchanged
+    expect(st.stats.breakCount).toBe(0);
+    expect(st.stats.totalBreakMinutes).toBe(0);
+    expect(st.nextBreak?.scheduledStart).toBe(at(E0, 60).toISOString());
+    await shiftSvc.endShift(ids.nima, at(E0, 90));
   });
 });
 

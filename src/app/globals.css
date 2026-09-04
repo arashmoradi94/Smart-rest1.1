@@ -157,3 +157,89 @@ body {
     linear-gradient(180deg, #0b1220 0%, #0f172a 100%);
   color: var(--foreground);
 }
+
+/* RTL Persian (Jalali) month picker (admin dinner tab) */
+.jalali-month-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  margin-top: 0.25rem;
+}
+
+.jalali-month-nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: 0.75rem;
+  padding: 0.25rem 0.5rem;
+  background: rgba(148, 163, 184, 0.06);
+}
+
+.jalali-month-nav button {
+  width: 2rem;
+  height: 2rem;
+  border-radius: 0.6rem;
+  font-size: 1rem;
+  line-height: 1;
+  color: var(--break);
+  background: rgba(99, 102, 241, 0.08);
+}
+
+.jalali-month-title {
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.jalali-month-fields {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.5rem;
+}
+
+.jalali-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  font-size: 0.7rem;
+}
+
+.jalali-field-label {
+  color: var(--muted);
+}
+
+.jalali-select {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 0.75rem;
+  padding: 0.4rem 0.5rem;
+  font-size: 0.8rem;
+  background: transparent;
+  color: inherit;
+  text-align: right;
+}
+
+/* RTL Persian (Jalali) full date picker (day/month/year) */
+.jalali-date-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.jalali-picker-title {
+  font-size: 0.7rem;
+  color: var(--muted);
+}
+
+.jalali-date-fields {
+  display: grid;
+  grid-template-columns: 1fr 1.4fr 1.2fr;
+  gap: 0.5rem;
+}
+
+.jalali-selected-date {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--break);
+}

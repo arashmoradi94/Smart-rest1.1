@@ -54,8 +54,8 @@ describe("Reminder sweep (server-side push scheduling)", () => {
   });
 
   it("sends end warning and overdue once each during a running break", async () => {
-    // Break scheduled at T0+60; start it 1 min early then sweep around the end.
-    await breakSvc.startBreak(ids.ali, at(T0, 59));
+    // Break scheduled at T0+60; start it at the window open, then sweep around the end.
+    await breakSvc.startBreak(ids.ali, at(T0, 60));
     const state1 = await reminder.runReminderSweep(at(T0, 68)); // 1 min before fixed end (59+10)
     expect(state1.endWarn).toBe(1);
     expect((await reminder.runReminderSweep(at(T0, 68.5))).endWarn).toBe(0);

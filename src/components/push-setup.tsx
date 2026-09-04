@@ -1,9 +1,9 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
+import { ToastController } from "@/lib/toast-controller";
 
 export const NOTIFICATION_DURATION = 5000;
 export const NOTIFICATION_VOLUME = 0.30;
-const currentTime = () => Date.now();
 
 export type NotificationKind = "break-start" | "break-end" | "reminder" | "achievement" | "announcement";
 interface InAppNotification {
@@ -136,8 +136,31 @@ export function PushSetup() {
   const [toasts, setToasts] = useState<InAppNotification[]>([]);
   const [drag, setDrag] = useState<{ id: string; x: number } | null>(null);
   const [closing, setClosing] = useState<Set<string>>(new Set());
+  // Exit direction per toast: the side the user swiped towards (default: right).
+  const [exitDirs, setExitDirs] = useState<ReadonlyMap<string, 1 | -1>>(new Map());
   const dragStart = useRef<{ id: string; x: number } | null>(null);
-  const timers = useRef(new Map<string, { timeout: number; startedAt: number; remaining: number }>());
+  const dragX = useRef(0);
+  // Owns every auto-dismiss and exit timer; destroying it on unmount leaves
+  // no dangling setTimeout behind. Created exactly once.
+  const [controller] = useState(
+    () =>
+      new ToastController({
+        onExitStart: (id) => setClosing((current) => new Set(current).add(id)),
+        onRemoved: (id) => {
+          setToasts((current) => current.filter((item) => item.id !== id));
+          setClosing((current) => {
+            const next = new Set(current);
+            next.delete(id);
+            return next;
+          });
+          setExitDirs((current) => {
+            const next = new Map(current);
+            next.delete(id);
+            return next;
+          });
+        },
+      }),
+  );
 
   useEffect(() => {
     const listener = (notification: InAppNotification) =>
@@ -149,79 +172,41 @@ export function PushSetup() {
   }, []);
 
   useEffect(() => {
-    const activeIds = new Set(toasts.map((toast) => toast.id));
-    for (const [id, timer] of timers.current) {
-      if (!activeIds.has(id)) {
-        window.clearTimeout(timer.timeout);
-        timers.current.delete(id);
-      }
-    }
-    for (const toast of toasts) {
-      if (timers.current.has(toast.id)) continue;
-      const start = currentTime();
-      const timeout = window.setTimeout(() => {
-        timers.current.delete(toast.id);
-        setToasts((current) => current.filter((item) => item.id !== toast.id));
-      }, NOTIFICATION_DURATION);
-      timers.current.set(toast.id, {
-        timeout,
-        startedAt: start,
-        remaining: NOTIFICATION_DURATION,
-      });
-    }
-  }, [toasts]);
+    // Deadline is measured from the toast actually appearing; tracking an
+    // already-tracked id (re-render, re-notification with the same id) is a
+    // no-op, so a timer is never reset by re-rendering.
+    for (const toast of toasts) controller.track(toast.id);
+  }, [toasts, controller]);
 
-  useEffect(() => () => {
-    for (const timer of timers.current.values()) window.clearTimeout(timer.timeout);
-    timers.current.clear();
-  }, []);
+  useEffect(() => () => controller.destroy(), [controller]);
 
   function dismiss(id: string) {
-    const timer = timers.current.get(id);
-    if (timer) {
-      window.clearTimeout(timer.timeout);
-      timers.current.delete(id);
-    }
-    setClosing((current) => new Set(current).add(id));
-    window.setTimeout(() => {
-      setToasts((current) => current.filter((item) => item.id !== id));
-      setClosing((current) => {
-        const next = new Set(current);
-        next.delete(id);
+    // Remember the swipe side so the exit animation continues in that direction
+    if (dragX.current !== 0) {
+      setExitDirs((current) => {
+        const next = new Map(current);
+        next.set(id, dragX.current < 0 ? -1 : 1);
         return next;
       });
-    }, 180);
-    setDrag(null);
-  }
-
-  function pause(id: string) {
-    const timer = timers.current.get(id);
-    if (!timer) return;
-    window.clearTimeout(timer.timeout);
-    timer.remaining = Math.max(0, timer.remaining - (currentTime() - timer.startedAt));
-  }
-
-  function resume(id: string) {
-    const timer = timers.current.get(id);
-    if (!timer || timer.remaining <= 0) {
-      if (timer) dismiss(id);
-      return;
     }
-    timer.startedAt = currentTime();
-    timer.timeout = window.setTimeout(() => {
-      timers.current.delete(id);
-      setToasts((current) => current.filter((item) => item.id !== id));
-    }, timer.remaining);
+    // dismiss() clears the toast's auto timer and runs the exit animation;
+    // removal happens when the animation ends.
+    controller.dismiss(id);
+    dragStart.current = null;
+    setDrag(null);
+    dragX.current = 0;
   }
 
   function pointerDown(event: React.PointerEvent<HTMLDivElement>, id: string) {
     dragStart.current = { id, x: event.clientX };
+    dragX.current = 0;
     event.currentTarget.setPointerCapture(event.pointerId);
   }
 
   function pointerMove(event: React.PointerEvent<HTMLDivElement>) {
     if (!dragStart.current) return;
-    setDrag({ id: dragStart.current.id, x: event.clientX - dragStart.current.x });
+    dragX.current = event.clientX - dragStart.current.x;
+    setDrag({ id: dragStart.current.id, x: dragX.current });
   }
 
   function pointerUp(event: React.PointerEvent<HTMLDivElement>) {
@@ -231,8 +216,10 @@ export function PushSetup() {
     dragStart.current = null;
     if (Math.abs(offset) >= 90) dismiss(id);
     else {
+      // Swipe too short → spring back and resume the countdown
+      dragX.current = 0;
       setDrag(null);
-      resume(id);
+      controller.resume(id);
     }
   }
 
@@ -246,42 +233,50 @@ export function PushSetup() {
 
   return (
     <>
-      {toasts.map((toast) => (
-        <div
-          key={toast.id}
-          className="notification-toast"
-          role="status"
-          aria-live="polite"
-          onPointerDown={(event) => pointerDown(event, toast.id)}
-          onPointerMove={pointerMove}
-          onPointerUp={pointerUp}
-          onPointerEnter={() => pause(toast.id)}
-          onPointerLeave={() => {
-            if (!dragStart.current) resume(toast.id);
-          }}
-          onPointerCancel={() => {
-            dragStart.current = null;
-            resume(toast.id);
-            setDrag(null);
-          }}
-          style={{
-            transform: closing.has(toast.id)
-              ? `translateX(${drag?.id === toast.id && drag.x < 0 ? -120 : 120}%)`
-              : `translateX(${drag?.id === toast.id ? drag.x : 0}px)`,
-            opacity: closing.has(toast.id) ? 0 : 1,
-            transition: drag?.id === toast.id && !closing.has(toast.id) ? "none" : "transform 180ms ease-out, opacity 180ms ease-out",
-            touchAction: "pan-y",
-          }}
-        >
-          <div className="notification-toast-content">
-            <strong>{toast.title}</strong>
-            <span>{toast.body}</span>
+      {toasts.map((toast) => {
+        const isClosing = closing.has(toast.id);
+        const dir = exitDirs.get(toast.id) ?? 1;
+        return (
+          <div
+            key={toast.id}
+            className="notification-toast"
+            role="status"
+            aria-live="polite"
+            onPointerDown={(event) => pointerDown(event, toast.id)}
+            onPointerMove={pointerMove}
+            onPointerUp={pointerUp}
+            onPointerEnter={() => controller.pause(toast.id)}
+            onPointerLeave={() => {
+              if (!dragStart.current) controller.resume(toast.id);
+            }}
+            onPointerCancel={() => {
+              dragStart.current = null;
+              dragX.current = 0;
+              controller.resume(toast.id);
+              setDrag(null);
+            }}
+            style={{
+              transform: isClosing
+                ? `translateX(${dir * 120}%)`
+                : `translateX(${drag?.id === toast.id ? drag.x : 0}px)`,
+              opacity: isClosing ? 0 : 1,
+              transition:
+                drag?.id === toast.id && !isClosing
+                  ? "none"
+                  : "transform 180ms ease-out, opacity 180ms ease-out",
+              touchAction: "pan-y",
+            }}
+          >
+            <div className="notification-toast-content">
+              <strong>{toast.title}</strong>
+              <span>{toast.body}</span>
+            </div>
+            <button type="button" className="notification-close" onClick={() => dismiss(toast.id)} aria-label="بستن اعلان">
+              ×
+            </button>
           </div>
-          <button type="button" className="notification-close" onClick={() => dismiss(toast.id)} aria-label="بستن اعلان">
-            ×
-          </button>
-        </div>
-      ))}
+        );
+      })}
       {permission !== "granted" && (
         <div className="glass-card flex items-center justify-between gap-3 rounded-2xl px-4 py-3 text-sm" role="status">
           <span>
@@ -314,6 +309,11 @@ export async function notify(title: string, body: string, tag?: string, kind?: N
       typeof Notification === "undefined" ||
       Notification.permission !== "granted"
     ) {
+      return;
+    }
+    // The in-app toast is already on screen while the page is visible — also
+    // raising the service-worker notification would duplicate the same event.
+    if (typeof document !== "undefined" && document.visibilityState === "visible") {
       return;
     }
     const reg = await navigator.serviceWorker?.getRegistration();

@@ -60,9 +60,16 @@ export async function saveDinnerSchedule(input: {
 
   if (input.mode === "AUTO") {
     const userIds = [...eligible].sort();
-    const generated = dates.flatMap((date, day) =>
+    // Business rule: ONE fixed dinner time per employee PER MONTH. The slot
+    // depends only on the employee index and the MONTH — never on the day —
+    // so every day of the month gets the same time for the same employee,
+    // and re-running the algorithm (refresh/re-login/restart) reproduces the
+    // exact same schedule. The month offset lets next month differ.
+    const [y, m] = input.monthKey.split("-").map(Number);
+    const monthOffset = (y * 12 + m) % slotList.length;
+    const generated = dates.flatMap((date) =>
       userIds.map((userId, index) => {
-        const slot = slotList[(index + day) % slotList.length];
+        const slot = slotList[(index + monthOffset) % slotList.length];
         return { scheduleId: schedule.id, userId, date, ...slot, allocation: "AUTO" };
       }),
     );

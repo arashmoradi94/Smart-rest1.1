@@ -276,8 +276,11 @@ export function EmployeeDashboard({ userName }: { userName: string }) {
     : isBreak
     ? new Date(state.currentBreak!.endsAt ?? state.currentBreak!.scheduledEnd).getTime()
     : state.nextBreak
-      ? new Date(state.nextBreak.scheduledStart).getTime()
+      // Inside the start window the countdown runs to the WINDOW END (server
+      // timestamps only); before it, it counts down to the break start.
+      ? new Date(state.nextBreak.ready ? state.nextBreak.scheduledEnd : state.nextBreak.scheduledStart).getTime()
       : 0;
+  const breakWindowOpen = state.userStatus === "WORKING" && !!state.nextBreak?.ready;
   const totalSeconds = state.userStatus === "EMERGENCY"
     ? Math.max(1, state.timerSeconds)
     : isBreak
@@ -405,7 +408,7 @@ export function EmployeeDashboard({ userName }: { userName: string }) {
                     seconds={seconds}
                     totalSeconds={totalSeconds}
                     color={color}
-                    label={state.timerLabel}
+                    label={breakWindowOpen ? "تا پایان پنجرهٔ شروع استراحت" : state.timerLabel}
                     pulsing={state.userStatus === "LATE"}
                   />
                 )}
@@ -413,14 +416,26 @@ export function EmployeeDashboard({ userName }: { userName: string }) {
             ) : null}
             {state.nextBreak && state.userStatus === "WORKING" && (
               <p className="text-sm" style={{ color: "var(--muted)" }}>
-                استراحت بعدی: ساعت{" "}
-                <bdi className="font-bold" style={{ color: "var(--break)" }}>
-                  {formatPersianTime(state.nextBreak.scheduledStart, state.settings.timezone)}
-                </bdi>{" "}
-                تا{" "}
-                <bdi className="font-bold">
-                  {formatPersianTime(state.nextBreak.scheduledEnd, state.settings.timezone)}
-                </bdi>
+                {breakWindowOpen ? (
+                  <>
+                    پنجرهٔ شروع استراحت باز است — تا{" "}
+                    <bdi className="font-bold" style={{ color: "var(--break)" }}>
+                      {formatPersianTime(state.nextBreak.scheduledEnd, state.settings.timezone)}
+                    </bdi>{" "}
+                    فرصت شروع داری
+                  </>
+                ) : (
+                  <>
+                    استراحت بعدی: ساعت{" "}
+                    <bdi className="font-bold" style={{ color: "var(--break)" }}>
+                      {formatPersianTime(state.nextBreak.scheduledStart, state.settings.timezone)}
+                    </bdi>{" "}
+                    تا{" "}
+                    <bdi className="font-bold">
+                      {formatPersianTime(state.nextBreak.scheduledEnd, state.settings.timezone)}
+                    </bdi>
+                  </>
+                )}
               </p>
             )}
             {isBreak && state.userStatus === "ON_BREAK" && (
@@ -446,7 +461,7 @@ export function EmployeeDashboard({ userName }: { userName: string }) {
             <>
               <button
                 onClick={() => act("/api/break/start")}
-                disabled={busy}
+                disabled={busy || (!!state.nextBreak && !state.nextBreak.ready)}
                 className="flex items-center justify-center gap-2 rounded-2xl py-4 text-base font-bold text-white transition active:scale-[.99] disabled:opacity-60"
                 style={{ background: "var(--break)" }}
               >

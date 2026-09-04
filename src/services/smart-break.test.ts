@@ -9,7 +9,6 @@ let db: typeof import("@/lib/db");
 let smart: typeof import("@/services/smart-break-service");
 let buddySvc: typeof import("@/services/buddy-service");
 let shiftSvc: typeof import("@/services/shift-service");
-let breakSvc: typeof import("@/services/break-service");
 let stateSvc: typeof import("@/services/state-service");
 let settingsSvc: typeof import("@/services/settings-service");
 let ids: Record<string, string> = {};
@@ -36,7 +35,6 @@ beforeAll(async () => {
   smart = await import("@/services/smart-break-service");
   buddySvc = await import("@/services/buddy-service");
   shiftSvc = await import("@/services/shift-service");
-  breakSvc = await import("@/services/break-service");
   stateSvc = await import("@/services/state-service");
   settingsSvc = await import("@/services/settings-service");
   const users = await db.prisma.user.findMany();
@@ -178,7 +176,12 @@ describe("Smart group flow (integration, temp db)", () => {
       await shiftSvc.startShift(u, T0);
     }
     for (const u of [ids.mohammad, ids.reza, ids.u2, ids.u3]) {
-      await breakSvc.startBreak(u, at(T0, 1), { force: true });
+      // Occupy capacity directly: each user's SCHEDULED break becomes ACTIVE
+      // running [T0+1, T0+11) (fixed 10-minute duration from actualStart).
+      await db.prisma.break.updateMany({
+        where: { userId: u, status: "SCHEDULED" },
+        data: { actualStart: at(T0, 1), status: "ACTIVE" },
+      });
     }
     await buddySvc.adminSetBuddy(ids.admin, ids.ali, ids.u1, true);
   });
