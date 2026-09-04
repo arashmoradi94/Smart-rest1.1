@@ -74,6 +74,18 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
 export async function requireAuth() {
   const session = await auth();
   if (!session?.user) throw new Error("Unauthorized");
+  // A signed JWT is not proof the account still exists: after a DB rebuild
+  // (Render deploy with ephemeral SQLite), a re-seed, or an account deletion
+  // the session can carry a userId that has no row in the User table. Feeding
+  // such an id into FK-constrained writes (Shift/Break/CoinTransaction/…) ends
+  // in a ForeignKeyConstraintViolation. Re-validating here turns those stale
+  // sessions into a clean 401 so the client forces a fresh login against the
+  // CURRENT database.
+  const user = await prisma.user.findUnique({
+    where: { id: session.user.id },
+    select: { id: true },
+  });
+  if (!user) throw new Error("Unauthorized");
   return session.user;
 }
 

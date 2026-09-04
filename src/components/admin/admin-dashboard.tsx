@@ -88,7 +88,15 @@ export function AdminDashboard({ adminName }: { adminName: string }) {
   const fetchState = useCallback(async () => {
     try {
       const r = await fetch("/api/admin/state", { cache: "no-store" });
-      if (!r.ok) throw new Error();
+      if (!r.ok) {
+        // Stale session (e.g. admin account removed / DB rebuilt): force a
+        // fresh login so the session binds to a user that exists again.
+        if (r.status === 401) {
+          setError("نشست شما معتبر نیست؛ دوباره وارد شوید.");
+          void signOut({ callbackUrl: "/login" });
+        }
+        throw new Error();
+      }
       setState(await r.json());
     } catch {
       /* offline — SSE fallback keeps going */

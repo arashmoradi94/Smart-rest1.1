@@ -108,7 +108,15 @@ export function EmployeeDashboard({ userName }: { userName: string }) {
   const fetchState = useCallback(async () => {
     try {
       const r = await fetch("/api/state", { cache: "no-store" });
-      if (!r.ok) throw new Error();
+      if (!r.ok) {
+        // Stale session (user deleted / DB rebuilt): force a fresh login so the
+        // session binds to a userId that exists in the CURRENT database.
+        if (r.status === 401) {
+          setError("نشست شما معتبر نیست؛ دوباره وارد شوید.");
+          void signOut({ callbackUrl: "/login" });
+        }
+        throw new Error();
+      }
       apply(await r.json());
       setOffline(false);
       try {
@@ -209,8 +217,14 @@ export function EmployeeDashboard({ userName }: { userName: string }) {
       try {
         const r = await fetch(path, { method: "POST" });
         const d = await r.json();
-        if (!r.ok) setError(d.error ?? "خطایی رخ داد. دوباره تلاش کنید.");
-        else {
+        if (!r.ok) {
+          // Stale session (user deleted / DB rebuilt): force a fresh login so
+          // the session binds to a userId that exists in the CURRENT database.
+          if (r.status === 401) {
+            setError("نشست شما معتبر نیست؛ دوباره وارد شوید.");
+            void signOut({ callbackUrl: "/login" });
+          } else setError(d.error ?? "خطایی رخ داد. دوباره تلاش کنید.");
+        } else {
           apply(d);
           notified.current.clear();
           setRefreshKey((k) => k + 1);
@@ -522,8 +536,12 @@ export function EmployeeDashboard({ userName }: { userName: string }) {
                       try {
                         const r = await fetch("/api/break/emergency", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ reason: emergencyReason, note: emergencyNote }) });
                         const d = await r.json();
-                        if (!r.ok) setError(d.error ?? "شروع استراحت اضطراری ناموفق بود");
-                        else apply(d);
+                        if (!r.ok) {
+                          if (r.status === 401) {
+                            setError("نشست شما معتبر نیست؛ دوباره وارد شوید.");
+                            void signOut({ callbackUrl: "/login" });
+                          } else setError(d.error ?? "شروع استراحت اضطراری ناموفق بود");
+                        } else apply(d);
                       } catch {
                         setOffline(true);
                         setError("ارتباط با سرور برقرار نشد.");

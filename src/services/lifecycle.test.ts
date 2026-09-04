@@ -579,3 +579,41 @@ describe("Admin live state: capacity, forecast, statuses", () => {
     expect(withBreaks!.breaks[0]).toHaveProperty("actualStart");
   });
 });
+
+describe("Stale session / deleted user → clean 401, never an FK violation", () => {
+  it("startShift with a userId that no longer exists rejects 401 and writes nothing", async () => {
+    const ghost = await db.prisma.user.create({
+      data: { name: "ghost", username: "ghost", passwordHash: "x", role: "EMPLOYEE" },
+    });
+    // Simulate the production failure: the account row is gone (deleted, or DB
+    // rebuilt/re-seeded with fresh ids) but a session may still carry its id.
+    await db.prisma.user.delete({ where: { id: ghost.id } });
+    await expect(shiftSvc.startShift(ghost.id, at(T0, 5))).rejects.toMatchObject({ status: 401 });
+    // No Shift row is ever written with the stale foreign key.
+    const rows = await db.prisma.shift.count({ where: { userId: ghost.id } });
+    expect(rows).toBe(0);
+  });
+
+  it("multi-user lifecycle: A start/end → B start/end → refresh → re-login → A starts again", async () => {
+    await shiftSvc.endShift(ids.ali).catch(() => {});
+    await shiftSvc.endShift(ids.sara).catch(() => {});
+    const A = at(T0, 500);
+    await shiftSvc.startShift(ids.ali, A);
+    await shiftSvc.endShift(ids.ali, at(A, 30));
+    const B = at(T0, 530);
+    await shiftSvc.startShift(ids.sara, B);
+    await shiftSvc.endShift(ids.sara, at(B, 30));
+    // Refresh recomputes state from the DB — no orphan, no new Shift.
+    const st = await stateSvc.getEmployeeState(ids.ali, at(T0, 560));
+    expect(st.hasActiveShift).toBe(false);
+    const firstCount = await db.prisma.shift.count({ where: { userId: ids.ali } });
+    // Logout/login re-binds the session to the SAME row (user still exists) —
+    // exactly one new Shift is created, not an FK violation.
+    await shiftSvc.startShift(ids.ali, at(T0, 570));
+    const active = await db.prisma.shift.findFirst({ where: { userId: ids.ali, status: "ACTIVE" } });
+    expect(active).toBeTruthy();
+    const secondCount = await db.prisma.shift.count({ where: { userId: ids.ali } });
+    expect(secondCount).toBe(firstCount + 1);
+    await shiftSvc.endShift(ids.ali, at(T0, 600));
+  });
+});

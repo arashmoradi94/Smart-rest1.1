@@ -24,6 +24,13 @@ export async function startShift(userId: string, now = new Date()) {
   const existing = await getActiveShift(userId);
   if (existing) throw new AppError("شیفت فعال شما از قبل آغاز شده است", 409);
 
+  // FK boundary guard: Shift.userId → User.id. If the session's user no longer
+  // exists (deleted account, rebuilt/re-seeded DB) the create below would throw
+  // a ForeignKeyConstraintViolation (P2003/modelName Shift). Surface a clean
+  // 401 instead so the client forces re-login against the CURRENT database.
+  const user = await prisma.user.findUnique({ where: { id: userId }, select: { id: true } });
+  if (!user) throw new AppError("نشست شما معتبر نیست؛ دوباره وارد شوید", 401);
+
   const settings = await getSettings();
   const shift = await prisma.shift.create({
     data: { userId, startedAt: now },

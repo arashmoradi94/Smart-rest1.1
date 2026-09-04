@@ -30,5 +30,10 @@
     ".next/dev/types/**/*.ts",
     "**/*.mts"
   ],
-  "exclude": ["node_modules"]
+  "exclude": [
+    "node_modules",
+    // Local scratch / QA artifacts are never compiled or type-checked
+    "tmp-qa",
+    "dbg-*.mts"
+  ]
 }

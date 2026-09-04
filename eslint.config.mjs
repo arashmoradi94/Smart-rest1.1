@@ -12,6 +12,11 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Dependencies and generated code are never linted:
+    "node_modules/**",
+    "src/generated/**",
+    // Local scratch / QA artifacts (browser profile dumps, temp scripts):
+    "tmp-qa/**",
   ]),
 ]);
 
