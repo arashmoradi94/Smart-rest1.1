@@ -73,8 +73,22 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
 
 export async function requireAuth() {
   const session = await auth();
-  if (!session?.user) throw new Error("Unauthorized");
-  return session.user;
+  const sessionUser = session?.user;
+  if (!sessionUser?.id) throw new Error("Unauthorized");
+
+  const currentUser = await prisma.user.findUnique({
+    where: { id: sessionUser.id },
+    select: { id: true, name: true, username: true, role: true },
+  });
+
+  if (!currentUser) throw new Error("Unauthorized");
+
+  return {
+    id: currentUser.id,
+    name: currentUser.name,
+    username: currentUser.username,
+    role: currentUser.role as UserRole,
+  };
 }
 
 /** EMPLOYEE + SUPERVISOR + ADMIN */

@@ -1,4 +1,5 @@
 import type { NextAuthConfig } from "next-auth";
+import { prisma } from "@/lib/db";
 
 export const authConfig = {
   trustHost: true,
@@ -6,20 +7,46 @@ export const authConfig = {
   pages: { signIn: "/login" },
   providers: [],
   callbacks: {
-    jwt({ token, user }) {
+    async jwt({ token, user }) {
       if (user) {
         token.id = user.id!;
         token.role = user.role;
         token.username = user.username;
       }
+
+      if (typeof token.id !== "string") return token;
+
+      const currentUser = await prisma.user.findUnique({
+        where: { id: token.id },
+        select: { id: true, name: true, username: true, role: true },
+      });
+
+      if (!currentUser) {
+        return {
+          ...token,
+          id: undefined,
+          role: undefined,
+          username: undefined,
+          name: undefined,
+        };
+      }
+
+      token.id = currentUser.id;
+      token.role = currentUser.role as "EMPLOYEE" | "SUPERVISOR" | "ADMIN";
+      token.username = currentUser.username;
       return token;
     },
     session({ session, token }) {
+      const sessionUserId = typeof token.id === "string" ? token.id : undefined;
+      if (!sessionUserId) {
+        return { ...session, user: undefined };
+      }
+
       session.user = {
-        id: token.id as string,
+        id: sessionUserId,
         name: session.user?.name ?? "",
-        username: token.username as string,
-        role: token.role as "EMPLOYEE" | "SUPERVISOR" | "ADMIN",
+        username: (token.username as string) ?? session.user?.username ?? "",
+        role: (token.role as "EMPLOYEE" | "SUPERVISOR" | "ADMIN") ?? "EMPLOYEE",
       } as typeof session.user;
       return session;
     },
