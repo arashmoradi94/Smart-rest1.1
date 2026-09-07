@@ -22,13 +22,7 @@ export const authConfig = {
       });
 
       if (!currentUser) {
-        return {
-          ...token,
-          id: undefined,
-          role: undefined,
-          username: undefined,
-          name: undefined,
-        };
+        return null;
       }
 
       token.id = currentUser.id;

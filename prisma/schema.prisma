@@ -27,6 +27,15 @@ model User {
   coinTransactions  CoinTransaction[]
   redemptions       RewardRedemption[]
   pushSubscriptions PushSubscription[]
+  buddyRequestsSent BuddyRequest[]    @relation("BuddyRequester")
+  buddyRequestsReceived BuddyRequest[] @relation("BuddyAddressee")
+  buddyLinksA       BuddyLink[]       @relation("BuddyLinkA")
+  buddyLinksB       BuddyLink[]       @relation("BuddyLinkB")
+  groupBreaksCreated GroupBreak[]     @relation("GroupBreakCreator")
+  groupBreakMembers GroupBreakMember[]
+  announcementsAuthored Announcement[] @relation("AnnouncementAuthor")
+  announcementReads AnnouncementRead[]
+  auditLogs         AuditLog[]
 }
 
 model Shift {
@@ -67,6 +76,7 @@ model Break {
 
   shift Shift @relation(fields: [shiftId], references: [id], onDelete: Cascade)
   user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  groupBreak GroupBreak? @relation(fields: [groupBreakId], references: [id], onDelete: SetNull)
 
   @@index([shiftId])
   @@index([userId, status])
@@ -96,7 +106,12 @@ model BuddyRequest {
   createdAt   DateTime  @default(now())
   respondedAt DateTime?
 
-  @@unique([requesterId, addresseeId])
+  requester User @relation("BuddyRequester", fields: [requesterId], references: [id], onDelete: Cascade)
+  addressee User @relation("BuddyAddressee", fields: [addresseeId], references: [id], onDelete: Cascade)
+
+  @@unique([requesterId, addresseeId], map: "sqlite_autoindex_BuddyRequest_2")
+  @@index([requesterId, status])
+  @@index([addresseeId, status])
 }
 
 model BuddyLink {
@@ -105,29 +120,40 @@ model BuddyLink {
   bId       String
   createdAt DateTime @default(now())
 
-  @@unique([aId, bId])
+  userA User @relation("BuddyLinkA", fields: [aId], references: [id], onDelete: Cascade)
+  userB User @relation("BuddyLinkB", fields: [bId], references: [id], onDelete: Cascade)
+
+  @@unique([aId, bId], map: "sqlite_autoindex_BuddyLink_2")
+  @@index([aId])
   @@index([bId])
 }
 
 model GroupBreak {
   id          String    @id @default(cuid())
   status      String    @default("FORMING")
-  createdById String
+  createdById String?
   startedAt   DateTime?
   createdAt   DateTime  @default(now())
 
+  createdBy User? @relation("GroupBreakCreator", fields: [createdById], references: [id], onDelete: SetNull)
   members GroupBreakMember[]
+  breaks Break[]
+
+  @@index([createdById, status])
 }
 
 model Announcement {
   id          String   @id @default(cuid())
-  authorId    String
+  authorId    String?
   message     String
   audience    String   @default("ALL")
   targetUserIds String  @default("[]")
   createdAt   DateTime @default(now())
 
+  author User? @relation("AnnouncementAuthor", fields: [authorId], references: [id], onDelete: SetNull)
   reads AnnouncementRead[]
+
+  @@index([authorId, createdAt])
 }
 
 model AnnouncementRead {
@@ -137,6 +163,7 @@ model AnnouncementRead {
   readAt         DateTime @default(now())
 
   announcement Announcement @relation(fields: [announcementId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([announcementId, userId])
   @@index([userId])
@@ -149,20 +176,21 @@ model GroupBreakMember {
   readyAt      DateTime?
 
   groupBreak GroupBreak @relation(fields: [groupBreakId], references: [id], onDelete: Cascade)
+  user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  @@unique([groupBreakId, userId])
+  @@unique([groupBreakId, userId], map: "sqlite_autoindex_GroupBreakMember_2")
   @@index([userId])
 }
 
 model CoinTransaction {
   id        String   @id @default(cuid())
-  userId    String
+  userId    String?
   amount    Int
   type      String
   reason    String
   createdAt DateTime @default(now())
 
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
 
   @@index([userId, createdAt])
 }
@@ -182,22 +210,24 @@ model Reward {
 model RewardRedemption {
   id        String   @id @default(cuid())
   rewardId  String
-  userId    String
+  userId    String?
   coinSpent Int
   createdAt DateTime @default(now())
 
   reward Reward @relation(fields: [rewardId], references: [id], onDelete: Cascade)
-  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user   User?  @relation(fields: [userId], references: [id], onDelete: SetNull)
 
   @@index([userId])
 }
 
 model AuditLog {
   id        String   @id @default(cuid())
-  userId    String
+  userId    String?
   action    String
   details   String?
   createdAt DateTime @default(now())
+
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
 
   @@index([createdAt])
   @@index([userId, createdAt])
@@ -212,4 +242,6 @@ model PushSubscription {
   createdAt DateTime @default(now())
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
 }

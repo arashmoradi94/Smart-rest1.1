@@ -261,15 +261,19 @@ export async function readyForGroupBreak(userId: string, now = new Date()) {
 
   // Roster = current members ∪ (creator + creator's confirmed buddies).
   // Anchoring on the creator makes the roster stable while others join.
-  const [members, creatorLinks] = await Promise.all([
-    prisma.groupBreakMember.findMany({ where: { groupBreakId: group.id } }),
-    prisma.buddyLink.findMany({
-      where: { OR: [{ aId: group.createdById }, { bId: group.createdById }] },
-    }),
-  ]);
+  const members = await prisma.groupBreakMember.findMany({ where: { groupBreakId: group.id } });
+  const creatorLinks = group.createdById
+    ? await prisma.buddyLink.findMany({
+        where: { OR: [{ aId: group.createdById }, { bId: group.createdById }] },
+      })
+    : [];
   const memberIds = members.map((m) => m.userId);
   const rosterIds = [
-    ...new Set([...memberIds, group.createdById, ...creatorLinks.flatMap((l) => [l.aId, l.bId])]),
+    ...new Set([
+      ...memberIds,
+      ...(group.createdById ? [group.createdById] : []),
+      ...creatorLinks.flatMap((l) => [l.aId, l.bId]),
+    ]),
   ];
   const users = await prisma.user.findMany({
     where: { id: { in: rosterIds } },

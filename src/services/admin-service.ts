@@ -313,14 +313,17 @@ export async function listAudit(limit = 100): Promise<AuditRow[]> {
     orderBy: { createdAt: "desc" },
     take: Math.min(200, Math.max(1, limit)),
   });
+  const userIds = rowsRaw
+    .map((r) => r.userId)
+    .filter((userId): userId is string => Boolean(userId));
   const users = await prisma.user.findMany({
-    where: { id: { in: [...new Set(rowsRaw.map((r) => r.userId))] } },
+    where: { id: { in: [...new Set(userIds)] } },
     select: { id: true, name: true },
   });
   const nameOf = Object.fromEntries(users.map((u) => [u.id, u.name]));
   return rowsRaw.map((r) => ({
     id: r.id,
-    userName: nameOf[r.userId] ?? r.userId,
+    userName: r.userId ? (nameOf[r.userId] ?? r.userId) : "کاربر حذف‌شده",
     action: r.action,
     details: r.details ?? undefined,
     createdAt: r.createdAt.toISOString(),
