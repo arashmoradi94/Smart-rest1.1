@@ -1,6 +1,6 @@
 import { requireAdmin } from "@/lib/auth";
 import { errorResponse, limit, readJson } from "@/lib/api";
-import { validate, createUserSchema, updateUserRoleSchema } from "@/lib/validators";
+import { validate, createUserSchema, deleteUserIdSchema, updateUserRoleSchema } from "@/lib/validators";
 import { AppError } from "@/lib/utils";
 import { prisma } from "@/lib/db";
 import { adminCreateUser, adminUpdateUserRole } from "@/services/admin-service";
@@ -49,8 +49,9 @@ export async function DELETE(request: Request) {
   try {
     const admin = await requireAdmin();
     limit(request, admin.id, "write");
-    const id = new URL(request.url).searchParams.get("id");
-    if (!id) throw new AppError("id الزامی است");
+    const { id } = validate(deleteUserIdSchema, {
+      id: new URL(request.url).searchParams.get("id"),
+    });
     const target = await prisma.user.findUnique({ where: { id } });
     if (!target) throw new AppError("کاربر یافت نشد", 404);
     if (target.role === "ADMIN") throw new AppError("نمی‌توانید ادمین را حذف کنید", 403);

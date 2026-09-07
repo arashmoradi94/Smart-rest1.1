@@ -6,9 +6,15 @@ import { AppError } from "@/lib/utils";
  * `validate()` turns failures into Persian AppErrors (HTTP 400).
  */
 
-const id = z.string().min(1).max(64);
+export const id = z.string().trim().min(1, "شناسه الزامی است").max(64, "شناسه بیش از حد طولانی است");
 
 export const roleSchema = z.enum(["EMPLOYEE", "SUPERVISOR", "ADMIN"]);
+
+export const safePositiveInt = (max: number, message: string) =>
+  z.number().int(message).min(1, message).max(max, message);
+
+export const safePositiveIntString = (max: number, message: string) =>
+  z.coerce.number().int(message).min(1, message).max(max, message);
 
 const timezoneSchema = z.string().refine(
   (tz) => {
@@ -92,10 +98,29 @@ export const buddyRespondSchema = z.object({ requestId: id, accept: z.boolean() 
 
 export const buddyRemoveSchema = z.object({ buddyId: id });
 
+export const adminBuddySchema = z.object({
+  userId: id,
+  buddyId: id,
+  link: z.boolean(),
+});
+
 export const callStatusSchema = z.object({
   onCall: z.boolean(),
   userId: id.optional(),
 });
+
+export const historyQuerySchema = z.object({
+  userId: id,
+  days: safePositiveIntString(365, "بازه زمانی نامعتبر است").default(30),
+  status: z
+    .string()
+    .optional()
+    .transform((value) => value?.split(",").map((item) => item.trim()).filter(Boolean) ?? undefined),
+});
+
+export const auditLimitSchema = safePositiveIntString(500, "محدودیت گزارش نامعتبر است").default(100);
+
+export const deleteUserIdSchema = z.object({ id });
 
 export const pushSubscriptionSchema = z.object({
   endpoint: z.string().url("آدرس اشتراک نامعتبر است").max(500),
