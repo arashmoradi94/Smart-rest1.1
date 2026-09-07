@@ -21,15 +21,30 @@ export async function getActiveShift(userId: string) {
 }
 
 export async function startShift(userId: string, now = new Date()) {
-  const existing = await getActiveShift(userId);
-  if (existing) throw new AppError("شیفت فعال شما از قبل آغاز شده است", 409);
-
   const settings = await getSettings();
-  const shift = await prisma.shift.create({
-    data: { userId, startedAt: now },
-    include: { breaks: true },
-  });
-  await prisma.user.update({ where: { id: userId }, data: { status: "WORKING" } });
+  let shift;
+  try {
+    shift = await prisma.$transaction(async (tx) => {
+      const existing = await tx.shift.findFirst({
+        where: { userId, status: "ACTIVE" },
+        include: { breaks: { orderBy: { breakIndex: "asc" } } },
+      });
+      if (existing) throw new AppError("شیفت فعال شما از قبل آغاز شده است", 409);
+
+      const created = await tx.shift.create({
+        data: { userId, startedAt: now },
+        include: { breaks: true },
+      });
+      await tx.user.update({ where: { id: userId }, data: { status: "WORKING" } });
+      return created;
+    });
+  } catch (error) {
+    if (error instanceof AppError) throw error;
+    if (await getActiveShift(userId)) {
+      throw new AppError("شیفت فعال شما از قبل آغاز شده است", 409);
+    }
+    throw error;
+  }
   const { awardCoins, COIN_RULES, touchStreak } = await import("@/services/gamification-service");
   await touchStreak(userId, now);
   await awardCoins(userId, COIN_RULES.SHIFT_STARTED, `SHIFT_START:${shift.id}`).catch(() => {});
@@ -42,50 +57,54 @@ export async function startShift(userId: string, now = new Date()) {
 }
 
 export async function endShift(userId: string, now = new Date()) {
-  const shift = await getActiveShift(userId);
-  if (!shift) throw new AppError("شیفت فعالی برای پایان دادن وجود ندارد", 409);
-
   const settings = await getSettings();
-  const open = shift.breaks[shift.breaks.length - 1];
-  if (open && (open.status === "ACTIVE" || open.status === "OVERTIME") && open.actualStart) {
-    // Closing the shift closes the running break with its FULL server-guaranteed
-    // duration (never the elapsed wall-clock at shift end being cut short).
-    const fixedEnd = addMinutes(open.actualStart, settings.breakDurationMinutes + open.extendMinutes);
-    const endDelay = diffMinutes(now, fixedEnd);
-    await prisma.break.updateMany({
-      where: { id: open.id, actualEnd: null },
-      data: {
-        actualEnd: fixedEnd,
-        durationMinutes: settings.breakDurationMinutes + open.extendMinutes,
-        endDelayMinutes: endDelay,
-        status: endDelay > 0 ? "LATE" : "COMPLETED",
-      },
+  const shift = await prisma.$transaction(async (tx) => {
+    const current = await tx.shift.findFirst({
+      where: { userId, status: "ACTIVE", endedAt: null },
+      include: { breaks: { orderBy: { breakIndex: "asc" } } },
     });
-  } else if (open && !open.actualStart && open.actualEnd === null && open.status === "SCHEDULED") {
-    await prisma.break.updateMany({ where: { id: open.id, status: "SCHEDULED" }, data: { status: "CANCELLED" } });
-  }
+    if (!current) throw new AppError("شیفت فعالی برای پایان دادن وجود ندارد", 409);
 
-  await prisma.shift.update({ where: { id: shift.id }, data: { endedAt: now, status: "ENDED" } });
-  await prisma.user.update({ where: { id: userId }, data: { status: "OFFLINE" } });
-  // Any forming group containing this user must not block on them.
-  await prisma.$transaction(async (tx) => {
+    const open = current.breaks[current.breaks.length - 1];
+    if (open && (open.status === "ACTIVE" || open.status === "OVERTIME") && open.actualStart) {
+      const fixedEnd = addMinutes(open.actualStart, settings.breakDurationMinutes + open.extendMinutes);
+      const endDelay = diffMinutes(now, fixedEnd);
+      await tx.break.updateMany({
+        where: { id: open.id, status: open.status, actualEnd: null },
+        data: {
+          actualEnd: fixedEnd,
+          durationMinutes: settings.breakDurationMinutes + open.extendMinutes,
+          endDelayMinutes: endDelay,
+          status: endDelay > 0 ? "LATE" : "COMPLETED",
+        },
+      });
+    } else if (open && !open.actualStart && open.actualEnd === null && open.status === "SCHEDULED") {
+      await tx.break.updateMany({ where: { id: open.id, status: "SCHEDULED" }, data: { status: "CANCELLED" } });
+    }
+
+    await tx.shift.updateMany({
+      where: { id: current.id, userId, status: "ACTIVE", endedAt: null },
+      data: { endedAt: now, status: "ENDED" },
+    });
+    await tx.user.update({ where: { id: userId }, data: { status: "OFFLINE" } });
+
     const memberships = await tx.groupBreakMember.findMany({
       where: { userId, groupBreak: { status: "FORMING" } },
-      include: { groupBreak: true },
     });
-    for (const m of memberships) {
+    for (const membership of memberships) {
       const remaining = await tx.groupBreakMember.count({
-        where: { groupBreakId: m.groupBreakId, userId: { not: userId } },
+        where: { groupBreakId: membership.groupBreakId, userId: { not: userId } },
       });
-      await tx.groupBreakMember.delete({ where: { id: m.id } });
+      await tx.groupBreakMember.delete({ where: { id: membership.id } });
       if (remaining === 0) {
-        await tx.groupBreak.update({ where: { id: m.groupBreakId }, data: { status: "CANCELLED" } });
+        await tx.groupBreak.update({ where: { id: membership.groupBreakId }, data: { status: "CANCELLED" } });
       }
     }
-  }).catch(() => {});
-  await prisma.break.updateMany({
-    where: { userId, status: "SCHEDULED", shiftId: shift.id },
-    data: { groupBreakId: null },
+    await tx.break.updateMany({
+      where: { userId, status: "SCHEDULED", shiftId: current.id },
+      data: { groupBreakId: null },
+    });
+    return current;
   });
 
   const done = shift.breaks.filter((b) => ["COMPLETED", "LATE"].includes(b.status));

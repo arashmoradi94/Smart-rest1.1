@@ -85,6 +85,22 @@ describe("Shift lifecycle (integration, temp db)", () => {
     await expect(shiftSvc.startShift(ids.ali, at(T0, 1))).rejects.toMatchObject({ status: 409 });
   });
 
+  it("concurrent start requests create only one active shift", async () => {
+    const user = await db.prisma.user.create({
+      data: { name: "Concurrent Shift", username: `concurrent-${Date.now()}`, passwordHash: "x" },
+    });
+    const results = await Promise.allSettled([
+      shiftSvc.startShift(user.id, at(T0, 2)),
+      shiftSvc.startShift(user.id, at(T0, 2)),
+    ]);
+    expect(results.filter((result) => result.status === "fulfilled")).toHaveLength(1);
+    expect(await db.prisma.shift.count({ where: { userId: user.id, status: "ACTIVE" } })).toBe(1);
+    expect(results.find((result) => result.status === "rejected")).toMatchObject({
+      reason: { status: 409 },
+    });
+    await shiftSvc.endShift(user.id, at(T0, 3));
+  });
+
   it("break starts manually before the suggestion and runs for the full duration", async () => {
     const state = await breakSvc.startBreak(ids.ali, at(T0, 59));
     expect(state.userStatus).toBe("ON_BREAK");
