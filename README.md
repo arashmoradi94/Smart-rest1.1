@@ -38,7 +38,7 @@ npm run db:seed             # دستی — فقط Local/Test
 npm run dev
 ```
 
-حساب پیش‌فرض Seed: `admin/admin1234` (قبل از استفاده واقعی عوض کنید)
+برای Seed محلی، `SEED_ADMIN_PASSWORD` و `SEED_DEFAULT_PASSWORD` را در environment تنظیم کنید.
 
 ## Production (Render/Node)
 ```bash

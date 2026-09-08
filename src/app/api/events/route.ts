@@ -1,5 +1,5 @@
 import { requireAuth, isTeamLead } from "@/lib/auth";
-import { errorResponse } from "@/lib/api";
+import { errorResponse, limit } from "@/lib/api";
 import { subscribe, type LiveEvent } from "@/lib/events";
 import { ensureReminderScheduler } from "@/services/reminder-job";
 
@@ -15,6 +15,11 @@ export async function GET(request: Request) {
   let user;
   try {
     user = await requireAuth();
+  } catch (e) {
+    return errorResponse(e);
+  }
+  try {
+    limit(request, user.id, "read");
   } catch (e) {
     return errorResponse(e);
   }

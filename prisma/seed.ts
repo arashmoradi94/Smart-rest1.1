@@ -9,16 +9,23 @@ const prisma = new PrismaClient({
   }),
 });
 
-const users = [
-  { name: "مدیر سیستم", username: "admin", password: "admin1234", role: "ADMIN" },
-  { name: "امیر رضا دیانت پی", username: "amirreza", password: "123456", role: "EMPLOYEE" },
-  { name: "مهدی علیمردانی", username: "mahdi", password: "123456", role: "EMPLOYEE" },
-  { name: " آرش مرادی ", username: "arash", password: "12345679", role: "EMPLOYEE" },
-  { name: "تستی 1", username: "test1", password: "123456", role: "EMPLOYEE" },
-  { name: "تستی 2", username: "test2", password: "123456", role: "EMPLOYEE" },
-];
-
 async function main() {
+  if (process.env.NODE_ENV === "production") {
+    throw new Error("Seed is disabled in production");
+  }
+  const seedPassword = process.env.SEED_DEFAULT_PASSWORD;
+  const adminPassword = process.env.SEED_ADMIN_PASSWORD;
+  if (!seedPassword || !adminPassword) {
+    throw new Error("SEED_ADMIN_PASSWORD and SEED_DEFAULT_PASSWORD are required for seeding");
+  }
+  const users = [
+    { name: "مدیر سیستم", username: "admin", password: adminPassword, role: "ADMIN" },
+    { name: "امیر رضا دیانت پی", username: "amirreza", password: seedPassword, role: "EMPLOYEE" },
+    { name: "مهدی علیمردانی", username: "mahdi", password: seedPassword, role: "EMPLOYEE" },
+    { name: " آرش مرادی ", username: "arash", password: seedPassword, role: "EMPLOYEE" },
+    { name: "تستی 1", username: "test1", password: seedPassword, role: "EMPLOYEE" },
+    { name: "تستی 2", username: "test2", password: seedPassword, role: "EMPLOYEE" },
+  ];
   for (const u of users) {
     await prisma.user.upsert({
       where: { username: u.username },
