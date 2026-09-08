@@ -100,15 +100,16 @@ export async function sendBuddyRequest(requesterId: string, addresseeId: string)
 }
 
 export async function respondBuddyRequest(userId: string, requestId: string, accept: boolean) {
-  const req = await prisma.buddyRequest.findUnique({ where: { id: requestId } });
-  if (!req || req.addresseeId !== userId) throw new AppError("درخواست یافت نشد", 404);
-  if (req.status !== "PENDING") throw new AppError("این درخواست قبلاً پاسخ داده شده", 409);
-
   if (!accept) {
-    await prisma.buddyRequest.update({
-      where: { id: requestId },
+    const rejected = await prisma.buddyRequest.updateMany({
+      where: { id: requestId, addresseeId: userId, status: "PENDING" },
       data: { status: "REJECTED", respondedAt: new Date() },
     });
+    if (rejected.count !== 1) {
+      const req = await prisma.buddyRequest.findUnique({ where: { id: requestId }, select: { addresseeId: true } });
+      if (!req || req.addresseeId !== userId) throw new AppError("درخواست یافت نشد", 404);
+      throw new AppError("این درخواست قبلاً پاسخ داده شده", 409);
+    }
     const { logAudit } = await import("@/lib/audit");
     await logAudit(userId, "BUDDY_RESPONSE", `rejected request:${requestId}`);
     return { ok: true, linked: false };
@@ -116,25 +117,30 @@ export async function respondBuddyRequest(userId: string, requestId: string, acc
 
   // Re-check capacity at accept time inside the transaction to close the race
   // where both parties accepted other requests simultaneously.
-  await prisma.$transaction(async (tx) => {
+  const requesterId = await prisma.$transaction(async (tx) => {
+    const req = await tx.buddyRequest.findUnique({ where: { id: requestId } });
+    if (!req || req.addresseeId !== userId) throw new AppError("درخواست یافت نشد", 404);
+    if (req.status !== "PENDING") throw new AppError("این درخواست قبلاً پاسخ داده شده", 409);
     const myLinks = await tx.buddyLink.count({
       where: { OR: [{ aId: userId }, { bId: userId }] },
     });
     if (myLinks >= MAX_BUDDIES) throw new AppError("حداکثر ۲ هم‌شیفتی می‌توانید داشته باشید", 409);
     const [aId, bId] = pairKey(req.requesterId, req.addresseeId);
-    await tx.buddyRequest.update({
-      where: { id: requestId },
+    const claimed = await tx.buddyRequest.updateMany({
+      where: { id: requestId, addresseeId: userId, status: "PENDING" },
       data: { status: "ACCEPTED", respondedAt: new Date() },
     });
+    if (claimed.count !== 1) throw new AppError("این درخواست قبلاً پاسخ داده شده", 409);
     await tx.buddyLink.create({ data: { aId, bId } }).catch(() => {
       throw new AppError("این Buddy از قبل وجود دارد", 409);
     });
+    return req.requesterId;
   });
-  publishStates([req.requesterId, userId]);
+  publishStates([requesterId, userId]);
   const { logAudit } = await import("@/lib/audit");
   await logAudit(userId, "BUDDY_RESPONSE", `accepted request:${requestId}`);
   const { sendPushToUser } = await import("@/lib/push");
-  sendPushToUser(req.requesterId, {
+  sendPushToUser(requesterId, {
     title: "🤝 Buddy تأیید شد",
     body: "درخواست هم‌شیفتی شما تأیید شد.",
     tag: "buddy-accept",
@@ -148,10 +154,11 @@ export async function cancelBuddyRequest(userId: string, requestId: string) {
   const req = await prisma.buddyRequest.findUnique({ where: { id: requestId } });
   if (!req || req.requesterId !== userId) throw new AppError("درخواست یافت نشد", 404);
   if (req.status !== "PENDING") throw new AppError("این درخواست قابل لغو نیست", 409);
-  await prisma.buddyRequest.update({
-    where: { id: requestId },
+  const cancelled = await prisma.buddyRequest.updateMany({
+    where: { id: requestId, requesterId: userId, status: "PENDING" },
     data: { status: "CANCELLED", respondedAt: new Date() },
   });
+  if (cancelled.count !== 1) throw new AppError("این درخواست قابل لغو نیست", 409);
   return { ok: true };
 }
 

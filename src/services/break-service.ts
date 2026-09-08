@@ -254,30 +254,25 @@ export async function cancelBreak(adminId: string, breakId: string) {
 
 /** Employee: leave a forming buddy group so they can start individually. */
 export async function leaveGroup(userId: string) {
-  const membership = await prisma.groupBreakMember.findFirst({
-    where: { userId },
-    include: { groupBreak: true },
-    orderBy: { id: "desc" },
-  });
-  if (!membership || membership.groupBreak.status !== "FORMING") {
-    throw new AppError("گروه فعالی برای خروج وجود ندارد", 409);
-  }
-  const members = await prisma.groupBreakMember.count({
-    where: { groupBreakId: membership.groupBreakId },
-  });
-  await prisma.$transaction([
-    prisma.groupBreakMember.delete({ where: { id: membership.id } }),
-    // Last member leaving closes the group
-    ...(members <= 1
-      ? [prisma.groupBreak.update({ where: { id: membership.groupBreakId }, data: { status: "CANCELLED" } })]
-      : []),
-  ]);
-  await prisma.break.updateMany({
-    where: { userId, groupBreakId: membership.groupBreakId, status: "SCHEDULED" },
-    data: { groupBreakId: null },
+  const groupBreakId = await prisma.$transaction(async (tx) => {
+    const membership = await tx.groupBreakMember.findFirst({
+      where: { userId, groupBreak: { status: "FORMING" } },
+      orderBy: { id: "desc" },
+    });
+    if (!membership) throw new AppError("گروه فعالی برای خروج وجود ندارد", 409);
+    await tx.groupBreakMember.delete({ where: { id: membership.id } });
+    const members = await tx.groupBreakMember.count({ where: { groupBreakId: membership.groupBreakId } });
+    if (members === 0) {
+      await tx.groupBreak.update({ where: { id: membership.groupBreakId }, data: { status: "CANCELLED" } });
+    }
+    await tx.break.updateMany({
+      where: { userId, groupBreakId: membership.groupBreakId, status: "SCHEDULED" },
+      data: { groupBreakId: null },
+    });
+    return membership.groupBreakId;
   });
   const { logAudit } = await import("@/lib/audit");
-  await logAudit(userId, "LEAVE_GROUP", `group:${membership.groupBreakId}`);
+  await logAudit(userId, "LEAVE_GROUP", `group:${groupBreakId}`);
   publishStates([userId]);
   return { ok: true };
 }

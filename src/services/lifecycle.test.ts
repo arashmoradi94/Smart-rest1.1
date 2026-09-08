@@ -391,6 +391,30 @@ describe("Buddy system + group break sync", () => {
     expect(u1List.buddies.map((b) => b.id)).toContain(ids.u2);
   });
 
+  it("concurrent buddy responses resolve a request only once", async () => {
+    const requester = await db.prisma.user.create({
+      data: { name: "Race requester", username: `race-requester-${Date.now()}`, passwordHash: "x" },
+    });
+    const addressee = await db.prisma.user.create({
+      data: { name: "Race addressee", username: `race-addressee-${Date.now()}`, passwordHash: "x" },
+    });
+    await buddySvc.sendBuddyRequest(requester.id, addressee.id);
+    const request = await db.prisma.buddyRequest.findFirstOrThrow({
+      where: { requesterId: requester.id, addresseeId: addressee.id, status: "PENDING" },
+    });
+
+    const results = await Promise.allSettled([
+      buddySvc.respondBuddyRequest(addressee.id, request.id, true),
+      buddySvc.respondBuddyRequest(addressee.id, request.id, false),
+    ]);
+    expect(results.filter((result) => result.status === "fulfilled")).toHaveLength(1);
+    expect(results.filter((result) => result.status === "rejected")).toHaveLength(1);
+    expect(await db.prisma.buddyRequest.count({ where: { id: request.id, status: "ACCEPTED" } })).toBe(1);
+    expect(await db.prisma.buddyLink.count({
+      where: { OR: [{ aId: requester.id, bId: addressee.id }, { aId: addressee.id, bId: requester.id }] },
+    })).toBe(1);
+  });
+
   it("group ready-sync: shared server timestamp, full duration for both", async () => {
     const G0 = new Date("2026-08-24T10:00:00.000Z");
     await shiftSvc.startShift(ids.u1, G0);
