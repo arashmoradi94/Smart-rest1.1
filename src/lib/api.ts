@@ -1,6 +1,21 @@
 import { AppError } from "@/lib/utils";
 import { clientKey, rateLimit } from "@/lib/rate-limit";
 
+type PrismaErrorLike = Error & { code?: string };
+
+function prismaErrorResponse(error: PrismaErrorLike): Response | undefined {
+  if (error.code === "P2002") {
+    return Response.json({ error: "این مورد از قبل وجود دارد" }, { status: 409 });
+  }
+  if (error.code === "P2025") {
+    return Response.json({ error: "مورد درخواستی یافت نشد" }, { status: 404 });
+  }
+  if (error.code === "P2003") {
+    return Response.json({ error: "این عملیات با وضعیت فعلی داده‌ها سازگار نیست" }, { status: 409 });
+  }
+  return undefined;
+}
+
 export function errorResponse(e: unknown): Response {
   if (e instanceof AppError) {
     return Response.json({ error: e.message }, { status: e.status });
@@ -11,7 +26,13 @@ export function errorResponse(e: unknown): Response {
   if (e instanceof Error && e.message === "Forbidden") {
     return Response.json({ error: "دسترسی لازم را ندارید" }, { status: 403 });
   }
-  console.error("[api]", e);
+  if (e instanceof Error) {
+    const databaseResponse = prismaErrorResponse(e as PrismaErrorLike);
+    if (databaseResponse) return databaseResponse;
+    console.error("[api]", e.name, e.message);
+  } else {
+    console.error("[api] unexpected non-error throw");
+  }
   return Response.json({ error: "خطای غیرمنتظره رخ داد. چند لحظه دیگر تلاش کنید." }, { status: 500 });
 }
 
