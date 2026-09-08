@@ -371,6 +371,12 @@ describe("Admin overrides: extend / cancel / grant / audit", () => {
     await annSvc.markRead(ids.reza, (latest as { id: string }).id);
     const after = await annSvc.getLatestForUser(ids.reza);
     expect(after.unread).toBe(false);
+    await expect(annSvc.markRead(ids.nima, (latest as { id: string }).id)).rejects.toMatchObject({ status: 404 });
+    expect(
+      await db.prisma.announcementRead.count({
+        where: { announcementId: (latest as { id: string }).id, userId: ids.nima },
+      }),
+    ).toBe(0);
     void created;
   });
 });

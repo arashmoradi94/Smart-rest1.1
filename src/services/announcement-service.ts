@@ -81,6 +81,22 @@ export async function getLatestForUser(userId: string) {
 }
 
 export async function markRead(userId: string, announcementId: string) {
+  const announcement = await prisma.announcement.findUnique({
+    where: { id: announcementId },
+    select: { audience: true, targetUserIds: true },
+  });
+  if (!announcement) throw new AppError("اطلاعیه یافت نشد", 404);
+  if (announcement.audience !== "ALL") {
+    let targets: unknown;
+    try {
+      targets = JSON.parse(announcement.targetUserIds);
+    } catch {
+      throw new AppError("اطلاعیه یافت نشد", 404);
+    }
+    if (!Array.isArray(targets) || !targets.includes(userId)) {
+      throw new AppError("اطلاعیه یافت نشد", 404);
+    }
+  }
   await prisma.announcementRead.upsert({
     where: { announcementId_userId: { announcementId, userId } },
     create: { announcementId, userId },
