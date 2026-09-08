@@ -1,14 +1,19 @@
 import { requireAuth } from "@/lib/auth";
 import { errorResponse, limit, readJson } from "@/lib/api";
-import { validate, pushSubscriptionSchema } from "@/lib/validators";
+import { validate, pushSubscriptionSchema, pushUnsubscribeSchema } from "@/lib/validators";
 import { logAudit } from "@/lib/audit";
 import { prisma } from "@/lib/db";
+import { AppError } from "@/lib/utils";
 
 export async function POST(request: Request) {
   try {
     const user = await requireAuth();
     limit(request, user.id, "write");
     const sub = validate(pushSubscriptionSchema, await readJson(request));
+    const existing = await prisma.pushSubscription.findUnique({ where: { endpoint: sub.endpoint } });
+    if (existing && existing.userId !== user.id) {
+      throw new AppError("این اشتراک متعلق به کاربر دیگری است", 409);
+    }
     await prisma.pushSubscription.upsert({
       where: { endpoint: sub.endpoint },
       create: {
@@ -30,11 +35,9 @@ export async function DELETE(request: Request) {
   try {
     const user = await requireAuth();
     limit(request, user.id, "write");
-    const { endpoint } = await readJson<{ endpoint?: string }>(request);
-    if (endpoint) {
-      await prisma.pushSubscription.deleteMany({ where: { endpoint, userId: user.id } });
-      await logAudit(user.id, "PUSH_UNSUBSCRIBE", endpoint.slice(0, 60));
-    }
+    const { endpoint } = validate(pushUnsubscribeSchema, await readJson(request));
+    await prisma.pushSubscription.deleteMany({ where: { endpoint, userId: user.id } });
+    await logAudit(user.id, "PUSH_UNSUBSCRIBE", endpoint.slice(0, 60));
     return Response.json({ ok: true });
   } catch (e) {
     return errorResponse(e);

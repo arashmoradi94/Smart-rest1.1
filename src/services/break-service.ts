@@ -106,7 +106,7 @@ export async function startBreak(userId: string, now = new Date(), opts?: { forc
   const { logAudit } = await import("@/lib/audit");
   await logAudit(userId, "BREAK_START", `break:${open.id} delay:${started}m`);
   const { sendPushToUser } = await import("@/lib/push");
-  sendPushToUser(userId, { title: "☕ استراحت", body: "زمان استراحت شما شروع شد.", tag: "break-start", kind: "break-start", url: "/dashboard" }).catch(() => {});
+  sendPushToUser(userId, { title: "☕ استراحت", body: "زمان استراحت شما شروع شد.", tag: `break-start:${open.id}`, kind: "break-start", url: "/dashboard" }).catch(() => {});
   publishStates([userId]);
   const { getEmployeeState } = await import("@/services/state-service");
   return getEmployeeState(userId, now);
@@ -172,7 +172,7 @@ export async function returnToWork(userId: string, now = new Date()) {
   const { logAudit } = await import("@/lib/audit");
   await logAudit(userId, "BREAK_RETURN", `break:${open.id} endDelay:${ended}m`);
   const { sendPushToUser } = await import("@/lib/push");
-  sendPushToUser(userId, { title: "💼 بازگشت به کار", body: "ثبت شد. موفق باشی!", tag: "return", kind: "break-end", url: "/dashboard" }).catch(() => {});
+  sendPushToUser(userId, { title: "💼 بازگشت به کار", body: "ثبت شد. موفق باشی!",   tag: `return:${open.id}`, kind: "break-end", url: "/dashboard" }).catch(() => {});
 
   const fresh = (await getActiveShift(userId))!;
   await ensureNextBreak(fresh, settings, now);

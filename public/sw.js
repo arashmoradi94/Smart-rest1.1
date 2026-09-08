@@ -34,17 +34,26 @@ self.addEventListener("fetch", (e) => {
 });
 
 self.addEventListener("push", (e) => {
-  let data = {};
+  let data = null;
   try {
-    data = e.data ? e.data.json() : {};
-  } catch {}
+    const parsed = e.data ? e.data.json() : null;
+    if (parsed && typeof parsed === "object") data = parsed;
+  } catch (error) {
+    console.warn("Invalid push payload", error);
+  }
+  if (!data || typeof data.title !== "string" || typeof data.body !== "string") return;
+  const kinds = ["break-start", "break-end", "reminder", "achievement", "announcement"];
+  const kind = kinds.includes(data.kind) ? data.kind : "announcement";
+  const url = typeof data.url === "string" && data.url.startsWith("/") && !data.url.startsWith("//")
+    ? data.url
+    : "/dashboard";
   const vibration = {
     "break-start": [70, 80, 70],
     "break-end": [100, 60, 100, 60, 150],
     reminder: [70],
     achievement: [50, 50, 50, 50, 90],
     announcement: [60],
-  }[data.kind] ?? [60];
+  }[kind] ?? [60];
   e.waitUntil(
     self.registration.showNotification(data.title ?? "مدیریت استراحت", {
       body: data.body ?? "",
@@ -54,18 +63,22 @@ self.addEventListener("push", (e) => {
       vibrate: vibration,
       dir: "rtl",
       lang: "fa",
-      data: { url: data.url ?? "/dashboard" },
+      data: { url },
     }),
   );
 });
 
 self.addEventListener("notificationclick", (e) => {
   e.notification.close();
+  const requestedUrl = e.notification.data?.url;
+  const url = typeof requestedUrl === "string" && requestedUrl.startsWith("/") && !requestedUrl.startsWith("//")
+    ? requestedUrl
+    : "/dashboard";
   e.waitUntil(
     self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((list) => {
       const client = list.find((c) => "focus" in c);
       if (client) return client.focus();
-      return self.clients.openWindow(e.notification.data?.url ?? "/dashboard");
+      return self.clients.openWindow(url);
     }),
   );
 });

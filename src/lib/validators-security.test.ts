@@ -5,6 +5,8 @@ import {
   auditLimitSchema,
   deleteUserIdSchema,
   historyQuerySchema,
+  pushSubscriptionSchema,
+  pushUnsubscribeSchema,
   validate,
 } from "@/lib/validators";
 
@@ -27,6 +29,19 @@ describe("API input validation hardening", () => {
   it("rejects invalid delete-user IDs", () => {
     expect(() => validate(deleteUserIdSchema, { id: "" })).toThrow(AppError);
     expect(() => validate(deleteUserIdSchema, { id: "   " })).toThrow(AppError);
+  });
+
+  it("bounds push subscription credentials and validates unsubscribe ownership input", () => {
+    expect(() =>
+      validate(pushSubscriptionSchema, {
+        endpoint: "https://push.example.test/subscription",
+        keys: { p256dh: "x".repeat(513), auth: "a" },
+      }),
+    ).toThrow(AppError);
+    expect(() => validate(pushUnsubscribeSchema, { endpoint: "not-a-url" })).toThrow(AppError);
+    expect(validate(pushUnsubscribeSchema, { endpoint: "https://push.example.test/subscription" })).toEqual({
+      endpoint: "https://push.example.test/subscription",
+    });
   });
 
   it("accepts valid security-safe payloads", () => {

@@ -13,6 +13,8 @@ interface InAppNotification {
 
 let audioContext: AudioContext | null = null;
 const inAppListeners = new Set<(notification: InAppNotification) => void>();
+const recentNotificationTags = new Map<string, number>();
+const DEDUPLICATION_WINDOW = 5000;
 
 const VIBRATION_PATTERNS: Record<NotificationKind, number | number[]> = {
   "break-start": [70, 80, 70],
@@ -187,6 +189,15 @@ export function PushSetup() {
 }
 export async function notify(title: string, body: string, tag?: string, kind?: NotificationKind) {
   try {
+    if (tag) {
+      const now = Date.now();
+      for (const [knownTag, timestamp] of recentNotificationTags) {
+        if (now - timestamp >= DEDUPLICATION_WINDOW) recentNotificationTags.delete(knownTag);
+      }
+      const lastShown = recentNotificationTags.get(tag) ?? 0;
+      if (now - lastShown < DEDUPLICATION_WINDOW) return;
+      recentNotificationTags.set(tag, now);
+    }
     const notificationKind = getNotificationKind(tag, kind);
     publishInAppNotification({ title, body, kind: notificationKind });
     vibrateNotification(notificationKind);

@@ -1,6 +1,15 @@
 import webpush from "web-push";
 import { prisma } from "@/lib/db";
 
+export type PushNotificationKind = "break-start" | "break-end" | "reminder" | "achievement" | "announcement";
+export type PushPayload = {
+  title: string;
+  body: string;
+  tag?: string;
+  url?: string;
+  kind?: PushNotificationKind;
+};
+
 let configured = false;
 
 function ensureConfigured() {
@@ -20,16 +29,22 @@ export function getVapidPublicKey() {
 
 export async function sendPushToUser(
   userId: string,
-  payload: { title: string; body: string; tag?: string; url?: string; kind?: string },
+  payload: PushPayload,
 ) {
   if (!ensureConfigured()) return;
+  const safePayload = {
+    ...payload,
+    url: payload.url && payload.url.startsWith("/") && !payload.url.startsWith("//")
+      ? payload.url
+      : "/dashboard",
+  };
   const subs = await prisma.pushSubscription.findMany({ where: { userId } });
   await Promise.all(
     subs.map(async (s) => {
       try {
         await webpush.sendNotification(
           { endpoint: s.endpoint, keys: { p256dh: s.p256dh, auth: s.auth } },
-          JSON.stringify(payload),
+          JSON.stringify(safePayload),
         );
       } catch (err) {
         // 404/410 = subscription expired -> remove

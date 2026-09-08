@@ -124,7 +124,14 @@ export const deleteUserIdSchema = z.object({ id });
 
 export const pushSubscriptionSchema = z.object({
   endpoint: z.string().url("آدرس اشتراک نامعتبر است").max(500),
-  keys: z.object({ p256dh: z.string().min(1), auth: z.string().min(1) }),
+  keys: z.object({
+    p256dh: z.string().min(1).max(512),
+    auth: z.string().min(1).max(512),
+  }),
+});
+
+export const pushUnsubscribeSchema = z.object({
+  endpoint: z.string().url("آدرس اشتراک نامعتبر است").max(500),
 });
 
 /** Parse with a schema or throw a 400 AppError carrying the first issue. */
