@@ -68,6 +68,12 @@ export async function startBreak(userId: string, now = new Date(), opts?: { forc
   // Capacity is re-checked inside the same transaction so concurrent starts
   // can never exceed maxConcurrentBreaks.
   const started = await prisma.$transaction(async (tx) => {
+    const activeShift = await tx.shift.findFirst({
+      where: { id: shift.id, userId, status: "ACTIVE", endedAt: null },
+      select: { id: true },
+    });
+    if (!activeShift) throw new AppError("شیفت شما دیگر فعال نیست", 409);
+
     const activeCount = await tx.break.count({
       where: { actualStart: { not: null }, actualEnd: null },
     });
@@ -76,7 +82,14 @@ export async function startBreak(userId: string, now = new Date(), opts?: { forc
     }
     const startDelayMinutes = calculateStartDelay(open.scheduledStart, now);
     const res = await tx.break.updateMany({
-      where: { id: open.id, status: "SCHEDULED", actualStart: null, actualEnd: null },
+      where: {
+        id: open.id,
+        shiftId: activeShift.id,
+        userId,
+        status: "SCHEDULED",
+        actualStart: null,
+        actualEnd: null,
+      },
       data: { actualStart: now, status: "ACTIVE", startDelayMinutes },
     });
     if (res.count !== 1) {
@@ -107,14 +120,28 @@ export async function returnToWork(userId: string, now = new Date()) {
   const open = shift.breaks.find((b) => b.status === "ACTIVE" || b.status === "OVERTIME");
   if (!open) throw new AppError("در حال حاضر در استراحت نیستید", 409);
   if (!open.actualStart) throw new AppError("وضعیت استراحت نامعتبر است", 409);
+  if (now < open.actualStart) throw new AppError("زمان پایان استراحت نمی‌تواند قبل از شروع آن باشد", 409);
 
   // Server rule: the break ALWAYS gets its full duration from actualStart
   // (+ admin-granted extension). Starting late never shortens it.
   const fixedEnd = addMinutes(open.actualStart, settings.breakDurationMinutes + open.extendMinutes);
   const endDelay = calculateEndDelay(fixedEnd, now);
   const ended = await prisma.$transaction(async (tx) => {
+    const activeShift = await tx.shift.findFirst({
+      where: { id: shift.id, userId, status: "ACTIVE", endedAt: null },
+      select: { id: true },
+    });
+    if (!activeShift) throw new AppError("شیفت شما دیگر فعال نیست", 409);
+
     const res = await tx.break.updateMany({
-      where: { id: open.id, status: { in: ["ACTIVE", "OVERTIME"] }, actualStart: { not: null }, actualEnd: null },
+      where: {
+        id: open.id,
+        shiftId: activeShift.id,
+        userId,
+        status: { in: ["ACTIVE", "OVERTIME"] },
+        actualStart: { not: null },
+        actualEnd: null,
+      },
       data: {
         actualEnd: fixedEnd,
         durationMinutes: settings.breakDurationMinutes + open.extendMinutes,
@@ -124,24 +151,23 @@ export async function returnToWork(userId: string, now = new Date()) {
     });
     if (res.count !== 1) throw new AppError("استراحت قبلاً پایان یافته است", 409);
     await tx.user.update({ where: { id: userId }, data: { status: "WORKING" } });
+    if (open.groupBreakId) {
+      const stillRunning = await tx.break.count({
+        where: { groupBreakId: open.groupBreakId, actualEnd: null },
+      });
+      if (stillRunning === 0) {
+        await tx.groupBreak.updateMany({
+          where: { id: open.groupBreakId, status: "ACTIVE" },
+          data: { status: "COMPLETED" },
+        });
+      }
+    }
     return endDelay;
   });
 
   if (ended === 0) {
     const { awardCoins, COIN_RULES } = await import("@/services/gamification-service");
     await awardCoins(userId, COIN_RULES.RETURN_ON_TIME, `RETURN_ONTIME:${open.id}`).catch(() => {});
-  }
-  // Close the group break once every member has returned
-  if (open.groupBreakId) {
-    const stillRunning = await prisma.break.count({
-      where: { groupBreakId: open.groupBreakId, actualEnd: null },
-    });
-    if (stillRunning === 0) {
-      await prisma.groupBreak.updateMany({
-        where: { id: open.groupBreakId, status: "ACTIVE" },
-        data: { status: "COMPLETED" },
-      }).catch(() => {});
-    }
   }
   const { logAudit } = await import("@/lib/audit");
   await logAudit(userId, "BREAK_RETURN", `break:${open.id} endDelay:${ended}m`);
@@ -160,14 +186,24 @@ export async function extendBreak(adminId: string, breakId: string, minutes: num
   if (!Number.isInteger(minutes) || minutes <= 0 || minutes > 120) {
     throw new AppError("مدت تمید باید عددی بین ۱ تا ۱۲۰ دقیقه باشد", 400);
   }
-  const brk = await prisma.break.findUnique({ where: { id: breakId } });
-  if (!brk) throw new AppError("استراحت یافت نشد", 404);
-  if (!brk.actualStart || brk.actualEnd) {
-    throw new AppError("فقط استراحت در حال اجرا قابل تمید است", 409);
-  }
-  await prisma.break.update({
-    where: { id: breakId },
-    data: { extendMinutes: brk.extendMinutes + minutes },
+  const brk = await prisma.$transaction(async (tx) => {
+    const current = await tx.break.findUnique({ where: { id: breakId }, include: { shift: true } });
+    if (!current) throw new AppError("استراحت یافت نشد", 404);
+    if (!current.actualStart || current.actualEnd || current.shift.status !== "ACTIVE" || current.shift.endedAt) {
+      throw new AppError("فقط استراحت در حال اجرا قابل تمید است", 409);
+    }
+    const updated = await tx.break.updateMany({
+      where: {
+        id: breakId,
+        shiftId: current.shiftId,
+        status: { in: ["ACTIVE", "OVERTIME"] },
+        actualStart: { not: null },
+        actualEnd: null,
+      },
+      data: { extendMinutes: { increment: minutes } },
+    });
+    if (updated.count !== 1) throw new AppError("استراحت دیگر قابل تمدید نیست", 409);
+    return current;
   });
   const { logAudit } = await import("@/lib/audit");
   await logAudit(adminId, "EXTEND_BREAK", `break:${breakId} +${minutes}m`).catch(() => {});
@@ -185,17 +221,23 @@ export async function extendBreak(adminId: string, breakId: string, minutes: num
 
 /** Admin: cancel a not-yet-started break (never destroys history). */
 export async function cancelBreak(adminId: string, breakId: string) {
-  const brk = await prisma.break.findUnique({ where: { id: breakId } });
-  if (!brk) throw new AppError("استراحت یافت نشد", 404);
-  if (brk.actualStart && !brk.actualEnd) {
-    throw new AppError("استراحت در حال اجراست؛ ابتدا بازگشت را ثبت کنید", 409);
-  }
-  if (brk.actualEnd) throw new AppError("استراحت پایان‌یافته قابل لغو نیست", 409);
-  const res = await prisma.break.updateMany({
-    where: { id: breakId, status: "SCHEDULED", actualStart: null },
-    data: { status: "CANCELLED" },
+  const brk = await prisma.$transaction(async (tx) => {
+    const current = await tx.break.findUnique({ where: { id: breakId }, include: { shift: true } });
+    if (!current) throw new AppError("استراحت یافت نشد", 404);
+    if (current.shift.status !== "ACTIVE" || current.shift.endedAt) {
+      throw new AppError("استراحت مربوط به شیفت فعال نیست", 409);
+    }
+    if (current.actualStart && !current.actualEnd) {
+      throw new AppError("استراحت در حال اجراست؛ ابتدا بازگشت را ثبت کنید", 409);
+    }
+    if (current.actualEnd) throw new AppError("استراحت پایان‌یافته قابل لغو نیست", 409);
+    const res = await tx.break.updateMany({
+      where: { id: breakId, shiftId: current.shiftId, status: "SCHEDULED", actualStart: null, actualEnd: null },
+      data: { status: "CANCELLED" },
+    });
+    if (res.count !== 1) throw new AppError("استراحت قابل لغو نیست", 409);
+    return current;
   });
-  if (res.count !== 1) throw new AppError("استراحت قابل لغو نیست", 409);
   const { logAudit } = await import("@/lib/audit");
   await logAudit(adminId, "CANCEL_BREAK", `break:${breakId} user:${brk.userId}`).catch(() => {});
   const { sendPushToUser } = await import("@/lib/push");

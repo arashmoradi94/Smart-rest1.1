@@ -101,6 +101,35 @@ describe("Shift lifecycle (integration, temp db)", () => {
     await shiftSvc.endShift(user.id, at(T0, 3));
   });
 
+  it("concurrent break start and return requests remain idempotent", async () => {
+    const user = await db.prisma.user.create({
+      data: { name: "Concurrent Break", username: `concurrent-break-${Date.now()}`, passwordHash: "x" },
+    });
+    await shiftSvc.startShift(user.id, at(T0, 4));
+    const starts = await Promise.allSettled([
+      breakSvc.startBreak(user.id, at(T0, 64)),
+      breakSvc.startBreak(user.id, at(T0, 64)),
+    ]);
+    expect(starts.filter((result) => result.status === "fulfilled")).toHaveLength(1);
+    const active = await db.prisma.break.findMany({
+      where: { userId: user.id, actualStart: { not: null }, actualEnd: null },
+    });
+    expect(active).toHaveLength(1);
+    await expect(breakSvc.returnToWork(user.id, at(T0, 63))).rejects.toMatchObject({ status: 409 });
+
+    const returns = await Promise.allSettled([
+      breakSvc.returnToWork(user.id, at(T0, 75)),
+      breakSvc.returnToWork(user.id, at(T0, 75)),
+    ]);
+    expect(returns.filter((result) => result.status === "fulfilled")).toHaveLength(1);
+    const completed = await db.prisma.break.findMany({
+      where: { userId: user.id, actualStart: { not: null }, actualEnd: { not: null } },
+    });
+    expect(completed).toHaveLength(1);
+    expect(completed[0].durationMinutes).toBe(10);
+    await shiftSvc.endShift(user.id, at(T0, 76));
+  });
+
   it("break starts manually before the suggestion and runs for the full duration", async () => {
     const state = await breakSvc.startBreak(ids.ali, at(T0, 59));
     expect(state.userStatus).toBe("ON_BREAK");
