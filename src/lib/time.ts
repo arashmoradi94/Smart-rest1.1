@@ -52,6 +52,14 @@ export function companyDayKey(date: Date, timeZone?: string): string {
   return dayKeyFormatter(timeZone).format(date);
 }
 
+/** Return the company-calendar day immediately before an instant's day. */
+export function previousCompanyDayKey(timeZone?: string, now = new Date()): string {
+  const start = startOfCompanyDay(timeZone, now);
+  // Twelve hours before a company-day boundary is safely inside the
+  // preceding calendar day, including 23/25-hour DST days.
+  return companyDayKey(new Date(start.getTime() - 12 * 3600_000), timeZone);
+}
+
 /** Hour (0-23) of an instant in the company timezone. */
 export function companyHour(date: Date, timeZone?: string): number {
   return Number(hourFormatter(timeZone).format(date)) % 24;

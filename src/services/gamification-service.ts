@@ -1,7 +1,7 @@
 import { prisma } from "@/lib/db";
 import { AppError } from "@/lib/utils";
 import { logAudit } from "@/lib/audit";
-import { companyDayKey } from "@/lib/time";
+import { companyDayKey, previousCompanyDayKey } from "@/lib/time";
 import { getSettings } from "@/services/settings-service";
 import type { BadgeView } from "@/types";
 
@@ -60,7 +60,7 @@ export async function touchStreak(userId: string, now = new Date()): Promise<voi
   const todayKey = companyDayKey(now, timezone);
   const lastKey = user.lastShiftDate ? companyDayKey(user.lastShiftDate, timezone) : null;
   if (lastKey === todayKey) return;
-  const streak = lastKey === companyDayKey(new Date(now.getTime() - 24 * 3600 * 1000), timezone)
+  const streak = lastKey === previousCompanyDayKey(timezone, now)
     ? user.streakDays + 1
     : 1;
   await prisma.user.update({
@@ -159,10 +159,8 @@ export async function getLeaderboard(
   period: "day" | "week" | "month",
   now = new Date(),
 ): Promise<LeaderboardRow[]> {
-  const since = new Date(now);
-  if (period === "day") since.setDate(since.getDate() - 1);
-  else if (period === "week") since.setDate(since.getDate() - 7);
-  else since.setMonth(since.getMonth() - 1);
+  const windowDays = period === "day" ? 1 : period === "week" ? 7 : 30;
+  const since = new Date(now.getTime() - windowDays * 24 * 3600_000);
 
   const users = await prisma.user.findMany({
     where: { role: "EMPLOYEE" },

@@ -15,7 +15,7 @@ const settings: SchedulerSettings = {
   maxConcurrentBreaks: 5,
 };
 
-const at = (h: number, m = 0) => new Date(2026, 7, 18, h, m, 0, 0);
+const at = (h: number, m = 0) => new Date(Date.UTC(2026, 7, 18, h, m, 0, 0));
 
 describe("BreakScheduler", () => {
   it("Test 1: start 08:00 => break 09:00-09:10", () => {
