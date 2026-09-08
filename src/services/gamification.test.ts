@@ -41,6 +41,15 @@ describe("Gamification (server-side)", () => {
     expect(u?.xp).toBeGreaterThanOrEqual(10);
   });
 
+  it("serializes concurrent awards for the same event", async () => {
+    await Promise.all([
+      gam.awardCoins(userId, 10, "TEST:CONCURRENT"),
+      gam.awardCoins(userId, 10, "TEST:CONCURRENT"),
+    ]);
+    expect(await db.prisma.coinTransaction.count({ where: { userId, reason: "TEST:CONCURRENT" } })).toBe(1);
+    expect(await gam.getCoinBalance(userId)).toBe(20);
+  });
+
   it("streak increments across days, resets after gap", async () => {
     const d1 = new Date("2026-08-20T08:00:00Z");
     await gam.touchStreak(userId, d1);
@@ -72,8 +81,15 @@ describe("Gamification (server-side)", () => {
     const reward = await db.prisma.reward.create({
       data: { name: "Test Tea", coinCost: 10 },
     });
-    await expect(gam.redeemReward(userId, reward.id)).resolves.toEqual({ ok: true });
-    await expect(gam.redeemReward(userId, reward.id)).rejects.toMatchObject({ status: 409 });
+    const results = await Promise.allSettled([
+      gam.redeemReward(userId, reward.id),
+      gam.redeemReward(userId, reward.id),
+    ]);
+    expect(results.filter((result) => result.status === "fulfilled")).toHaveLength(1);
+    expect(results.find((result) => result.status === "rejected")).toMatchObject({
+      reason: { status: 409 },
+    });
+    expect(await db.prisma.rewardRedemption.count({ where: { rewardId: reward.id, userId } })).toBe(1);
     expect(await gam.getCoinBalance(userId)).toBe(0);
   });
 

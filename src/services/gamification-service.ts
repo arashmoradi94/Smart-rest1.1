@@ -20,6 +20,25 @@ function levelFromXp(xp: number): number {
   return Math.max(1, Math.floor(xp / LEVEL_STEP) + 1);
 }
 
+const userMutationTails = new Map<string, Promise<void>>();
+
+async function withUserMutation<T>(userId: string, operation: () => Promise<T>): Promise<T> {
+  const previous = userMutationTails.get(userId) ?? Promise.resolve();
+  let release!: () => void;
+  const current = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const queued = previous.then(() => current);
+  userMutationTails.set(userId, queued);
+  await previous;
+  try {
+    return await operation();
+  } finally {
+    release();
+    if (userMutationTails.get(userId) === queued) userMutationTails.delete(userId);
+  }
+}
+
 /**
  * Server-side only. Idempotency via a prior identical transaction reason
  * (reason includes breakId/shiftId) — double-award is impossible.
@@ -29,47 +48,55 @@ export async function awardCoins(
   amount: number,
   reason: string,
 ): Promise<void> {
-  if (amount === 0) return;
-  const dup = await prisma.coinTransaction.findFirst({
-    where: { userId, reason },
-    select: { id: true },
-  });
-  if (dup) return;
-  await prisma.$transaction([
-    prisma.coinTransaction.create({ data: { userId, amount, type: "EARN", reason } }),
-    prisma.user.update({
-      where: { id: userId },
-      data: { xp: { increment: Math.max(0, amount) } },
-    }),
-  ]);
-  const user = await prisma.user.findUnique({ where: { id: userId }, select: { xp: true } });
-  if (user) {
-    const level = levelFromXp(user.xp);
-    await prisma.user.update({ where: { id: userId }, data: { level } });
+  if (!Number.isInteger(amount) || amount <= 0) {
+    throw new AppError("مقدار امتیاز نامعتبر است", 400);
   }
+  if (!reason.trim()) throw new AppError("دلیل امتیاز الزامی است", 400);
+
+  await withUserMutation(userId, async () => {
+    await prisma.$transaction(async (tx) => {
+      const dup = await tx.coinTransaction.findFirst({
+        where: { userId, reason },
+        select: { id: true },
+      });
+      if (dup) return;
+
+      const user = await tx.user.update({
+        where: { id: userId },
+        data: { xp: { increment: amount } },
+        select: { xp: true },
+      });
+      await tx.coinTransaction.create({ data: { userId, amount, type: "EARN", reason } });
+      await tx.user.update({ where: { id: userId }, data: { level: levelFromXp(user.xp) } });
+    });
+  });
 }
 
 /** Daily streak update on shift start — server-side, company-timezone day. */
 export async function touchStreak(userId: string, now = new Date()): Promise<void> {
-  const user = await prisma.user.findUnique({
-    where: { id: userId },
-    select: { lastShiftDate: true, streakDays: true },
+  let milestone: { todayKey: string; streak: number } | undefined;
+  await withUserMutation(userId, async () => {
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { lastShiftDate: true, streakDays: true },
+    });
+    if (!user) return;
+    const timezone = (await getSettings()).timezone;
+    const todayKey = companyDayKey(now, timezone);
+    const lastKey = user.lastShiftDate ? companyDayKey(user.lastShiftDate, timezone) : null;
+    if (lastKey === todayKey) return;
+    const streak = lastKey === previousCompanyDayKey(timezone, now)
+      ? user.streakDays + 1
+      : 1;
+    await prisma.user.update({
+      where: { id: userId },
+      data: { lastShiftDate: now, streakDays: streak },
+    });
+    if (streak > 0 && streak % 7 === 0) milestone = { todayKey, streak };
   });
-  if (!user) return;
-  const timezone = (await getSettings()).timezone;
-  const todayKey = companyDayKey(now, timezone);
-  const lastKey = user.lastShiftDate ? companyDayKey(user.lastShiftDate, timezone) : null;
-  if (lastKey === todayKey) return;
-  const streak = lastKey === previousCompanyDayKey(timezone, now)
-    ? user.streakDays + 1
-    : 1;
-  await prisma.user.update({
-    where: { id: userId },
-    data: { lastShiftDate: now, streakDays: streak },
-  });
-  // Milestone bonus every 7 consecutive days
-  if (streak > 0 && streak % 7 === 0) {
-    await awardCoins(userId, COIN_RULES.STREAK_BONUS, `STREAK:${todayKey}:${streak}`).catch(() => {});
+  // Milestone bonus every 7 consecutive days, after the streak lock is released.
+  if (milestone) {
+    await awardCoins(userId, COIN_RULES.STREAK_BONUS, `STREAK:${milestone.todayKey}:${milestone.streak}`).catch(() => {});
   }
 }
 
@@ -93,18 +120,23 @@ export async function grantCoins(
   }
   const user = await prisma.user.findUnique({ where: { id: userId } });
   if (!user) throw new AppError("کاربر یافت نشد", 404);
-  await prisma.$transaction(async (tx) => {
-    await tx.coinTransaction.create({
-      data: { userId, amount, type: amount > 0 ? "GRANT" : "PENALTY", reason: `ADMIN:${reason}` },
+  await withUserMutation(userId, async () => {
+    await prisma.$transaction(async (tx) => {
+      const updated = amount > 0
+        ? await tx.user.update({
+            where: { id: userId },
+            data: { xp: { increment: amount } },
+            select: { xp: true },
+          })
+        : null;
+      await tx.coinTransaction.create({
+        data: { userId, amount, type: amount > 0 ? "GRANT" : "PENALTY", reason: `ADMIN:${reason}` },
+      });
+      if (updated) {
+        await tx.user.update({ where: { id: userId }, data: { level: levelFromXp(updated.xp) } });
+      }
     });
-    if (amount > 0) {
-      await tx.user.update({ where: { id: userId }, data: { xp: { increment: amount } } });
-    }
   });
-  if (amount > 0) {
-    const u = await prisma.user.findUnique({ where: { id: userId }, select: { xp: true } });
-    if (u) await prisma.user.update({ where: { id: userId }, data: { level: levelFromXp(u.xp) } });
-  }
   await logAudit(adminId, amount > 0 ? "GRANT_COINS" : "DEDUCT_COINS", `${userId} ${amount} (${reason})`);
   const { publishUserState } = await import("@/lib/events");
   publishUserState(userId, "gamification");
@@ -114,30 +146,35 @@ export async function redeemReward(
   userId: string,
   rewardId: string,
 ): Promise<{ ok: true }> {
-  const outcome = await prisma.$transaction(async (tx) => {
-    const reward = await tx.reward.findUnique({ where: { id: rewardId } });
-    if (!reward || !reward.active) throw new AppError("پاداش در دسترس نیست", 404);
+  const outcome = await withUserMutation(userId, () => prisma.$transaction(async (tx) => {
+      const reward = await tx.reward.findUnique({ where: { id: rewardId } });
+      if (!reward || !reward.active) throw new AppError("پاداش در دسترس نیست", 404);
 
-    if (reward.limitCount !== null) {
-      const count = await tx.rewardRedemption.count({ where: { rewardId } });
-      if (count >= reward.limitCount) throw new AppError("ظرفیت این پاداش تمام شده است", 409);
-    }
+      if (reward.limitCount !== null) {
+        const count = await tx.rewardRedemption.count({ where: { rewardId } });
+        if (count >= reward.limitCount) throw new AppError("ظرفیت این پاداش تمام شده است", 409);
+      }
 
-    const agg = await tx.coinTransaction.aggregate({
-      where: { userId },
-      _sum: { amount: true },
-    });
-    const balance = agg._sum.amount ?? 0;
-    if (balance < reward.coinCost) throw new AppError("موجودی سکه کافی نیست", 409);
+      const agg = await tx.coinTransaction.aggregate({
+        where: { userId },
+        _sum: { amount: true },
+      });
+      const balance = agg._sum.amount ?? 0;
+      if (balance < reward.coinCost) throw new AppError("موجودی سکه کافی نیست", 409);
 
-    await tx.coinTransaction.create({
-      data: { userId, amount: -reward.coinCost, type: "SPEND", reason: `REWARD:${reward.id}` },
-    });
-    await tx.rewardRedemption.create({
-      data: { rewardId, userId, coinSpent: reward.coinCost },
-    });
-    return { name: reward.name, coinCost: reward.coinCost };
-  });
+      const redemption = await tx.rewardRedemption.create({
+        data: { rewardId, userId, coinSpent: reward.coinCost },
+      });
+      await tx.coinTransaction.create({
+        data: {
+          userId,
+          amount: -reward.coinCost,
+          type: "SPEND",
+          reason: `REWARD:${reward.id}:${redemption.id}`,
+        },
+      });
+      return { name: reward.name, coinCost: reward.coinCost };
+    }));
   await logAudit(userId, "REWARD_REDEEM", `${outcome.name} (${outcome.coinCost} coins)`);
   const { publishUserState } = await import("@/lib/events");
   publishUserState(userId, "gamification");
