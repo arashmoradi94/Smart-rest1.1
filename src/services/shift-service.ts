@@ -154,45 +154,53 @@ export async function ensureNextBreak(
   settings: FullSettings,
   now: Date,
 ): Promise<void> {
-  const running = shift.breaks.find(
-    (b) => b.status === "SCHEDULED" || b.status === "ACTIVE" || b.status === "OVERTIME",
-  );
-  if (running) return;
+  await prisma.$transaction(async (tx) => {
+    const current = await tx.shift.findFirst({
+      where: { id: shift.id, userId: shift.userId, status: "ACTIVE", endedAt: null },
+      include: { breaks: { orderBy: { breakIndex: "asc" } } },
+    });
+    if (!current) return;
 
-  const last = shift.breaks[shift.breaks.length - 1];
-  // Next work cycle starts from the ACTUAL end of the previous break
-  // (a cancelled/skipped one falls back to its scheduled end).
-  const anchor = last
-    ? (last.actualEnd ?? last.scheduledEnd)
-    : shift.startedAt;
-  const idealStart =
-    addMinutes(anchor, settings.workDurationMinutes) > now
-      ? addMinutes(anchor, settings.workDurationMinutes)
-      : now;
-  const others = await prisma.break.findMany({
-    where: {
-      userId: { not: shift.userId },
-      status: "SCHEDULED",
-      scheduledEnd: { gt: now },
-      shift: { status: "ACTIVE" },
-    },
-    select: { userId: true, scheduledStart: true, scheduledEnd: true },
-  });
-  const resolved = resolveBreakWithCapacity(
-    { scheduledStart: idealStart, scheduledEnd: addMinutes(idealStart, settings.breakDurationMinutes) },
-    others,
-    shift.userId,
-    settings,
-  );
-  await prisma.break.create({
-    data: {
-      shiftId: shift.id,
-      userId: shift.userId,
-      breakIndex: last ? last.breakIndex + 1 : 0,
-      scheduledStart: resolved.scheduledStart,
-      scheduledEnd: resolved.scheduledEnd,
-      status: "SCHEDULED",
-    },
+    const running = current.breaks.find(
+      (b) => b.status === "SCHEDULED" || b.status === "ACTIVE" || b.status === "OVERTIME",
+    );
+    if (running) return;
+
+    const last = current.breaks[current.breaks.length - 1];
+    // Next work cycle starts from the ACTUAL end of the previous break
+    // (a cancelled/skipped one falls back to its scheduled end).
+    const anchor = last
+      ? (last.actualEnd ?? last.scheduledEnd)
+      : current.startedAt;
+    const idealStart =
+      addMinutes(anchor, settings.workDurationMinutes) > now
+        ? addMinutes(anchor, settings.workDurationMinutes)
+        : now;
+    const others = await tx.break.findMany({
+      where: {
+        userId: { not: current.userId },
+        status: "SCHEDULED",
+        scheduledEnd: { gt: now },
+        shift: { status: "ACTIVE", endedAt: null },
+      },
+      select: { userId: true, scheduledStart: true, scheduledEnd: true },
+    });
+    const resolved = resolveBreakWithCapacity(
+      { scheduledStart: idealStart, scheduledEnd: addMinutes(idealStart, settings.breakDurationMinutes) },
+      others,
+      current.userId,
+      settings,
+    );
+    await tx.break.create({
+      data: {
+        shiftId: current.id,
+        userId: current.userId,
+        breakIndex: last ? last.breakIndex + 1 : 0,
+        scheduledStart: resolved.scheduledStart,
+        scheduledEnd: resolved.scheduledEnd,
+        status: "SCHEDULED",
+      },
+    });
   });
 }
 

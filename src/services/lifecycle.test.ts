@@ -130,6 +130,27 @@ describe("Shift lifecycle (integration, temp db)", () => {
     await shiftSvc.endShift(user.id, at(T0, 76));
   });
 
+  it("repeated scheduler reads create one next break", async () => {
+    const user = await db.prisma.user.create({
+      data: { name: "Concurrent Scheduler", username: `concurrent-scheduler-${Date.now()}`, passwordHash: "x" },
+    });
+    await shiftSvc.startShift(user.id, at(T0, 5));
+    const first = await db.prisma.break.findFirst({ where: { userId: user.id, status: "SCHEDULED" } });
+    expect(first).not.toBeNull();
+    await db.prisma.break.update({
+      where: { id: first!.id },
+      data: { status: "CANCELLED" },
+    });
+
+    await Promise.all([
+      stateSvc.getEmployeeState(user.id, at(T0, 6)),
+      stateSvc.getEmployeeState(user.id, at(T0, 6)),
+      stateSvc.getEmployeeState(user.id, at(T0, 6)),
+    ]);
+    expect(await db.prisma.break.count({ where: { userId: user.id, status: "SCHEDULED" } })).toBe(1);
+    await shiftSvc.endShift(user.id, at(T0, 7));
+  });
+
   it("break starts manually before the suggestion and runs for the full duration", async () => {
     const state = await breakSvc.startBreak(ids.ali, at(T0, 59));
     expect(state.userStatus).toBe("ON_BREAK");
