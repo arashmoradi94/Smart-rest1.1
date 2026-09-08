@@ -27,6 +27,35 @@ export async function getAdminState(now = new Date()): Promise<AdminDashboardSta
     },
   });
 
+  const userIds = users.map((u) => u.id);
+  const [activeShifts, endedShifts] = await Promise.all([
+    prisma.shift.findMany({
+      where: { userId: { in: userIds }, status: "ACTIVE" },
+      orderBy: { startedAt: "desc" },
+      select: {
+        id: true,
+        userId: true,
+        startedAt: true,
+        breaks: {
+          orderBy: { breakIndex: "asc" },
+        },
+      },
+    }),
+    prisma.shift.findMany({
+      where: { userId: { in: userIds }, status: "ENDED" },
+      orderBy: { endedAt: "desc" },
+      select: { userId: true, endedAt: true },
+    }),
+  ]);
+  const activeShiftByUser = new Map<string, (typeof activeShifts)[number]>();
+  for (const shift of activeShifts) {
+    if (!activeShiftByUser.has(shift.userId)) activeShiftByUser.set(shift.userId, shift);
+  }
+  const lastEndedAtByUser = new Map<string, Date | null>();
+  for (const shift of endedShifts) {
+    if (!lastEndedAtByUser.has(shift.userId)) lastEndedAtByUser.set(shift.userId, shift.endedAt);
+  }
+
   const links = await prisma.buddyLink.findMany();
   const buddyMap = new Map<string, string[]>();
   for (const l of links) {
@@ -36,7 +65,7 @@ export async function getAdminState(now = new Date()): Promise<AdminDashboardSta
 
   const employees: AdminEmployeeView[] = await Promise.all(
     users.map(async (u) => {
-      const shift = await getActiveShift(u.id);
+      const shift = activeShiftByUser.get(u.id);
       let status: UserStatus = (u.status as UserStatus) || "OFFLINE";
       let countdownSeconds = 0;
       let nextBreakAt: string | undefined;
@@ -74,12 +103,7 @@ export async function getAdminState(now = new Date()): Promise<AdminDashboardSta
         }
         if (!currentBreak) delayMinutes = done.reduce((sum, b) => sum + b.endDelayMinutes, 0);
       } else {
-        const last = await prisma.shift.findFirst({
-          where: { userId: u.id, status: "ENDED" },
-          orderBy: { endedAt: "desc" },
-          select: { endedAt: true },
-        });
-        shiftEndedAt = last?.endedAt?.toISOString();
+        shiftEndedAt = lastEndedAtByUser.get(u.id)?.toISOString();
       }
 
       return {
