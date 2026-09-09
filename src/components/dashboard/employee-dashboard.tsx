@@ -196,7 +196,7 @@ export function EmployeeDashboard({ userName }: { userName: string }) {
 
   if (!state) {
     return (
-      <main className="mx-auto flex min-h-screen max-w-md flex-col gap-4 p-4">
+      <main className="app-shell flex min-h-screen max-w-md flex-col gap-4">
         <div className="glass-card h-16 animate-pulse rounded-2xl" />
         <div className="glass-card h-72 animate-pulse rounded-3xl" />
         <div className="glass-card h-24 animate-pulse rounded-2xl" />
@@ -217,7 +217,7 @@ export function EmployeeDashboard({ userName }: { userName: string }) {
   const finished = !state.hasActiveShift && state.shiftEnded;
 
   return (
-    <main className="mx-auto flex min-h-screen max-w-md flex-col gap-4 p-4 pb-8">
+    <main className="app-shell flex min-h-screen max-w-md flex-col gap-4">
       <PushSetup />
       <header className="glass-card flex items-center justify-between rounded-2xl px-4 py-3">
         <div>
@@ -262,7 +262,7 @@ export function EmployeeDashboard({ userName }: { userName: string }) {
 
       {state.hasActiveShift ? (
         <>
-          <section className="glass-card flex flex-col items-center gap-4 rounded-3xl p-6">
+          <section className="glass-card flex flex-col items-center gap-4 rounded-3xl p-5 sm:p-6">
             <StatusBadge status={state.userStatus} />
             {targetMs > 0 ? (
               <Countdown key={targetMs} targetMs={targetMs} offset={clockOffset} onExpire={fetchState}>
@@ -302,7 +302,7 @@ export function EmployeeDashboard({ userName }: { userName: string }) {
             )}
           </section>
 
-          <section className="flex flex-col gap-3">
+          <section className="flex flex-col gap-3" aria-label="عملیات شیفت و استراحت">
             {state.userStatus === "WORKING" ? (
               <button
                 onClick={() => act("/api/break/start")}
@@ -465,7 +465,7 @@ export function EmployeeDashboard({ userName }: { userName: string }) {
 
       {error && (
         <div
-          className="fixed inset-x-4 bottom-4 z-50 mx-auto max-w-md rounded-2xl px-4 py-3 text-center text-sm font-medium shadow-lg"
+          className="fixed inset-x-4 bottom-[max(1rem,env(safe-area-inset-bottom))] z-50 mx-auto max-w-md rounded-2xl px-4 py-3 text-center text-sm font-medium shadow-lg"
           style={{ background: "var(--danger)", color: "#fff" }}
           role="alert"
         >

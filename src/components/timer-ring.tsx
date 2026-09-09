@@ -26,6 +26,11 @@ export function TimerRing({
       <div
         className="flex size-48 flex-col items-center justify-center gap-1 rounded-full sm:size-56"
         style={{ background: "var(--background)" }}
+        role="progressbar"
+        aria-label={`${label}: ${formatTimer(seconds)}`}
+        aria-valuemin={0}
+        aria-valuemax={totalSeconds}
+        aria-valuenow={Math.min(totalSeconds, Math.max(0, totalSeconds - seconds))}
       >
         <span className="text-xs font-medium" style={{ color: "var(--muted)" }}>
           {label}

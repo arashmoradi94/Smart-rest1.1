@@ -208,7 +208,7 @@ export function AdminDashboard({ adminName }: { adminName: string }) {
   const noticeText = notice || error || msg;
 
   return (
-    <main className="mx-auto flex min-h-screen max-w-2xl flex-col gap-4 p-4 pb-8">
+    <main className="app-shell flex min-h-screen max-w-5xl flex-col gap-4">
       <header className="glass-card flex items-center justify-between rounded-2xl px-4 py-3">
         <div>
           <h1 className="text-sm font-bold">پنل مدیریت — {adminName}</h1>
@@ -230,7 +230,7 @@ export function AdminDashboard({ adminName }: { adminName: string }) {
         </div>
       </header>
 
-      <nav className="glass-card flex gap-1 overflow-x-auto rounded-2xl p-1" role="tablist">
+      <nav className="glass-card flex gap-1 overflow-x-auto rounded-2xl p-1" role="tablist" aria-label="بخش‌های پنل مدیریت">
         {(
           [
             ["live", "زنده", Users],
@@ -245,8 +245,10 @@ export function AdminDashboard({ adminName }: { adminName: string }) {
             key={key}
             role="tab"
             aria-selected={tab === key}
+            aria-controls={`admin-panel-${key}`}
+            id={`admin-tab-${key}`}
             onClick={() => setTab(key)}
-            className={`flex flex-1 items-center justify-center gap-1 rounded-xl px-2 py-2.5 text-xs font-bold transition ${
+            className={`flex min-w-max flex-1 items-center justify-center gap-1 rounded-xl px-2 py-2.5 text-xs font-bold transition ${
               tab === key ? "text-white" : ""
             }`}
             style={tab === key ? { background: "var(--break)" } : { color: "var(--muted)" }}
@@ -257,13 +259,14 @@ export function AdminDashboard({ adminName }: { adminName: string }) {
         ))}
       </nav>
 
+      <div id={`admin-panel-${tab}`} role="tabpanel" aria-labelledby={`admin-tab-${tab}`} tabIndex={0}>
       {tab === "live" && (
         <>
           {!state ? (
             <div className="glass-card h-64 animate-pulse rounded-3xl" />
           ) : (
             <>
-              <section className="grid grid-cols-4 gap-2">
+              <section className="grid grid-cols-2 gap-2 sm:grid-cols-4">
                 {[
                   { title: "در کار", value: state.stats.working, color: "var(--working)" },
                   { title: "استراحت", value: state.stats.onBreak, color: "var(--break)" },
@@ -574,10 +577,11 @@ export function AdminDashboard({ adminName }: { adminName: string }) {
           )}
         </section>
       )}
+      </div>
 
       {noticeText && (
         <div
-          className="fixed inset-x-4 bottom-4 z-50 mx-auto max-w-md rounded-2xl px-4 py-3 text-center text-sm font-medium shadow-lg"
+          className="fixed inset-x-4 bottom-[max(1rem,env(safe-area-inset-bottom))] z-50 mx-auto max-w-md rounded-2xl px-4 py-3 text-center text-sm font-medium shadow-lg"
           style={{
             background: error ? "var(--danger)" : "var(--working)",
             color: "#fff",

@@ -39,7 +39,7 @@ export default function LoginPage() {
 
   return (
     <main className="flex min-h-screen items-center justify-center p-4">
-      <div className="glass-card w-full max-w-sm rounded-3xl p-8">
+      <div className="glass-card w-full max-w-sm rounded-3xl p-6 sm:p-8">
         <div className="mb-8 flex flex-col items-center gap-3 text-center">
           <div
             className="flex size-16 items-center justify-center rounded-2xl"
@@ -59,6 +59,7 @@ export default function LoginPage() {
             <div className="flex items-center gap-2 rounded-xl border px-3" style={{ borderColor: "var(--border)" }}>
               <User className="size-4 shrink-0" style={{ color: "var(--muted)" }} aria-hidden />
               <input
+                aria-label="نام کاربری"
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
                 autoComplete="username"
@@ -74,6 +75,7 @@ export default function LoginPage() {
             <div className="flex items-center gap-2 rounded-xl border px-3" style={{ borderColor: "var(--border)" }}>
               <KeyRound className="size-4 shrink-0" style={{ color: "var(--muted)" }} aria-hidden />
               <input
+                aria-label="رمز عبور"
                 type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}

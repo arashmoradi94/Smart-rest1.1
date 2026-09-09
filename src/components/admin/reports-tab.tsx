@@ -90,7 +90,13 @@ export function ReportsTab() {
   const peakMax = data ? Math.max(1, ...data.peakTimes.map((p) => p.count)) : 1;
 
   return (
-    <section className="flex flex-col gap-3">
+    <section
+      className="flex flex-col gap-3"
+      id={`report-panel-${period}`}
+      role="tabpanel"
+      aria-labelledby={`report-tab-${period}`}
+      tabIndex={0}
+    >
       <div className="glass-card flex items-center justify-between gap-2 rounded-2xl p-2">
         <div className="flex flex-1 gap-1" role="tablist" aria-label="بازه گزارش">
           {PERIODS.map((p) => (
@@ -98,6 +104,8 @@ export function ReportsTab() {
               key={p.key}
               role="tab"
               aria-selected={period === p.key}
+              aria-controls={`report-panel-${p.key}`}
+              id={`report-tab-${p.key}`}
               onClick={() => setPeriod(p.key)}
               className={`flex-1 rounded-xl py-2 text-xs font-bold transition ${
                 period === p.key ? "text-white" : ""
@@ -126,7 +134,7 @@ export function ReportsTab() {
         </div>
       ) : (
         <>
-          <div className="grid grid-cols-3 gap-2">
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
             <Card title="کل کار" value={`${formatPersianNumber(Math.round(data.totalWorkMinutes / 60))} ساعت`} />
             <Card title="کل استراحت" value={`${formatPersianNumber(data.totalBreakMinutes)} دقیقه`} />
             <Card title="میانگین استراحت" value={`${formatPersianNumber(data.avgBreakMinutes)} دقیقه`} />

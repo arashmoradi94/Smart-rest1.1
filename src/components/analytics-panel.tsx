@@ -66,7 +66,7 @@ export function AnalyticsPanel() {
           ))}
         </span>
       </div>
-      <dl className="grid grid-cols-3 gap-2">
+      <dl className="grid grid-cols-2 gap-2 sm:grid-cols-3">
         {items.map(([k, v]) => (
           <div key={k} className="rounded-xl px-2 py-2.5 text-center" style={{ background: "rgba(148,163,184,.08)" }}>
             <dd className="text-sm font-bold tabular-nums">{v}</dd>

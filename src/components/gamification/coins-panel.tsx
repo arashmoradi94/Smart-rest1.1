@@ -99,7 +99,7 @@ export function CoinsPanel({ refreshKey }: { refreshKey: number }) {
         </span>
       </div>
 
-      <div className="grid grid-cols-3 gap-2">
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
         <div className="rounded-xl p-3 text-center" style={{ background: "rgba(148,163,184,.08)" }}>
           <p className="text-lg font-bold">{formatPersianNumber(me.level)}</p>
           <p className="text-xs" style={{ color: "var(--muted)" }}>سطح</p>
