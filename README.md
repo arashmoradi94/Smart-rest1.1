@@ -42,14 +42,19 @@ npm run dev
 
 ## Production (Render/Node)
 ```bash
+npm ci
+npx prisma migrate deploy
 npm run build   # Prisma generate در postinstall اجرا می‌شود
 npm start       # Health check: /api/health
 ```
-- دیتابیس: SQLite (`DATABASE_URL=file:./dev.db`). برای PostgreSQL باید provider و adapter در `src/lib/db.ts` عوض شود
-- `AUTH_SECRET` و کلیدهای VAPID به‌صورت Environment Variable — هرگز Commit نشوند
+- قبل از اجرا، `DATABASE_URL` باید به یک دیتابیس production پایدار و قابل backup اشاره کند؛ fallback `file:./dev.db` فقط برای توسعه/Build است و برای استقرار ephemeral مناسب نیست.
+- `AUTH_SECRET` (حداقل ۳۲ کاراکتر)، `DATABASE_URL` و در صورت فعال بودن Push، `VAPID_PUBLIC_KEY`، `VAPID_PRIVATE_KEY` و `VAPID_SUBJECT` را در Environment تنظیم کنید — هرگز Commit نشوند.
+- Health check: `GET /api/health` در وضعیت سالم `200` و در configuration یا database failure، `503` با پاسخ بدون جزئیات حساس برمی‌گرداند.
 - Seed در Production خودکار اجرا نمی‌شود؛ کاربر ادمین را یک‌بار دستی بسازید
 - مهاجرت امن بدون حذف داده: `npx prisma migrate deploy`
-- نکته‌ی Scale: SSE، rate limiter و reminder job تک‌نوده‌اند؛ برای چند نمونه Redis لازم است
+- قبل از release، backup و restore دیتابیس را خارج از این اپلیکیشن تست کنید.
+- نکته‌ی Scale: SSE، rate limiter و reminder job تک‌نوده‌اند؛ برای چند نمونه، session-aware routing و زیرساخت اشتراکی مانند Redis لازم است.
+- این repository فایل deployment پلتفرم خاصی ندارد؛ در Render/Node، دستور Build، Start، `DATABASE_URL`، secrets و health path را در تنظیمات سرویس تعریف کنید.
 
 ## تست
 ```bash
