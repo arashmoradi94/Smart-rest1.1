@@ -95,7 +95,7 @@ export function ProfilePanel() {
   }
 
   return (
-    <section className="glass-card flex flex-col gap-4 rounded-3xl p-5" aria-labelledby="profile-heading">
+    <section id="profile-panel" className="glass-card flex scroll-mt-4 flex-col gap-4 rounded-3xl p-5" aria-labelledby="profile-heading">
       <div className="flex items-center gap-2">
         <UserRound className="size-5" style={{ color: "var(--break)" }} aria-hidden />
         <h2 id="profile-heading" className="font-bold">پروفایل من</h2>

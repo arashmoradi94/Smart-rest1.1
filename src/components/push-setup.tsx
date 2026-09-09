@@ -2,7 +2,7 @@
 import { useEffect, useState } from "react";
 
 export const NOTIFICATION_DURATION = 5000;
-export const NOTIFICATION_VOLUME = 0.30;
+export const NOTIFICATION_VOLUME = 0.24;
 
 export type NotificationKind = "break-start" | "break-end" | "reminder" | "achievement" | "announcement";
 interface InAppNotification {
@@ -38,7 +38,6 @@ function playNotificationSound(kind: NotificationKind) {
   try {
     audioContext ??= new AudioContext();
     const context = audioContext;
-    const now = context.currentTime;
     const patterns: Record<NotificationKind, number[]> = {
       "break-start": [392, 587, 784],
       "break-end": [784, 587, 392],
@@ -47,23 +46,26 @@ function playNotificationSound(kind: NotificationKind) {
       announcement: [440, 659],
     };
     const notes = patterns[kind];
-    const gain = context.createGain();
-    gain.gain.setValueAtTime(0.0001, now);
-    gain.gain.linearRampToValueAtTime(NOTIFICATION_VOLUME, now + 0.015);
-    gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.42);
     const compressor = context.createDynamicsCompressor();
-    compressor.threshold.setValueAtTime(-18, now);
-    compressor.knee.setValueAtTime(12, now);
-    compressor.ratio.setValueAtTime(4, now);
-    gain.connect(compressor).connect(context.destination);
-
-    notes.forEach((frequency, index) => {
+    compressor.threshold.setValueAtTime(-20, context.currentTime);
+    compressor.knee.setValueAtTime(14, context.currentTime);
+    compressor.ratio.setValueAtTime(4, context.currentTime);
+    compressor.connect(context.destination);
+    const start = context.currentTime + 0.02;
+    notes.concat(notes[0]).forEach((frequency, index) => {
+      const toneStart = start + index * 0.34;
+      const toneEnd = toneStart + 0.22;
+      const gain = context.createGain();
       const oscillator = context.createOscillator();
-      oscillator.type = "sine";
-      oscillator.frequency.setValueAtTime(frequency, now + index * 0.07);
-      oscillator.connect(gain);
-      oscillator.start(now + index * 0.07);
-      oscillator.stop(now + 0.48);
+      oscillator.type = index % 2 === 0 ? "sine" : "triangle";
+      oscillator.frequency.setValueAtTime(frequency, toneStart);
+      gain.gain.setValueAtTime(0.0001, toneStart);
+      gain.gain.linearRampToValueAtTime(NOTIFICATION_VOLUME, toneStart + 0.025);
+      gain.gain.setValueAtTime(NOTIFICATION_VOLUME, toneEnd - 0.04);
+      gain.gain.exponentialRampToValueAtTime(0.0001, toneEnd);
+      oscillator.connect(gain).connect(compressor);
+      oscillator.start(toneStart);
+      oscillator.stop(toneEnd + 0.01);
     });
     void context.resume().catch(() => {});
   } catch {}
@@ -141,6 +143,14 @@ export function PushSetup() {
     return () => {
       inAppListeners.delete(listener);
     };
+  }, []);
+
+  useEffect(() => {
+    const unlockAudio = () => {
+      if (audioContext?.state === "suspended") void audioContext.resume().catch(() => {});
+    };
+    window.addEventListener("pointerdown", unlockAudio, { passive: true });
+    return () => window.removeEventListener("pointerdown", unlockAudio);
   }, []);
 
   useEffect(() => {

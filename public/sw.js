@@ -48,8 +48,8 @@ self.addEventListener("push", (e) => {
     ? data.url
     : "/dashboard";
   const vibration = {
-    "break-start": [70, 80, 70],
-    "break-end": [100, 60, 100, 60, 150],
+    "break-start": [120, 80, 120, 80, 220],
+    "break-end": [180, 70, 120, 70, 180],
     reminder: [70],
     achievement: [50, 50, 50, 50, 90],
     announcement: [60],

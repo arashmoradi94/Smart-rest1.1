@@ -10,6 +10,7 @@ import {
   LogOut,
   PlayCircle,
   StopCircle,
+  UserRound,
   WifiOff,
 } from "lucide-react";
 import { StatusBadge } from "@/components/status-badge";
@@ -229,6 +230,14 @@ export function EmployeeDashboard({ userName }: { userName: string }) {
         </div>
         <div className="flex gap-2">
           <ThemeToggle />
+          <a
+            href="#profile-panel"
+            className="flex size-10 items-center justify-center rounded-xl transition hover:opacity-70 focus-visible:outline-2 focus-visible:outline-offset-2"
+            style={{ background: "rgba(100,116,139,.1)", color: "var(--muted)" }}
+            aria-label="مدیریت پروفایل"
+          >
+            <UserRound className="size-5" aria-hidden />
+          </a>
           <button
             onClick={() => signOut({ callbackUrl: "/login" })}
             className="flex size-10 items-center justify-center rounded-xl transition hover:opacity-70"
