@@ -18,12 +18,17 @@ export const authConfig = {
 
       const currentUser = await prisma.user.findUnique({
         where: { id: token.id },
-        select: { id: true, name: true, username: true, role: true },
+        select: { id: true, name: true, username: true, role: true, passwordChangedAt: true },
       });
 
       if (!currentUser) {
         return null;
       }
+      const currentPasswordVersion = currentUser.passwordChangedAt?.toISOString() ?? null;
+      if ("passwordChangedAt" in token && token.passwordChangedAt !== currentPasswordVersion) {
+        return null;
+      }
+      token.passwordChangedAt = currentPasswordVersion;
 
       token.id = currentUser.id;
       token.role = currentUser.role as "EMPLOYEE" | "SUPERVISOR" | "ADMIN";

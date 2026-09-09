@@ -53,6 +53,23 @@ export const createUserSchema = z.object({
   role: roleSchema.default("EMPLOYEE"),
 });
 
+export const profileUpdateSchema = z.object({
+  name: z.string().trim().min(2, "نام باید حداقل ۲ کاراکتر باشد").max(60),
+}).strict();
+
+export const passwordChangeSchema = z.object({
+  currentPassword: z.string().min(1, "رمز عبور فعلی الزامی است").max(72),
+  newPassword: z.string().min(8, "رمز عبور جدید باید حداقل ۸ کاراکتر باشد").max(72),
+  confirmPassword: z.string().min(1, "تکرار رمز عبور الزامی است").max(72),
+}).strict().superRefine((value, ctx) => {
+  if (value.newPassword !== value.confirmPassword) {
+    ctx.addIssue({ code: "custom", path: ["confirmPassword"], message: "تکرار رمز عبور یکسان نیست" });
+  }
+  if (value.currentPassword === value.newPassword) {
+    ctx.addIssue({ code: "custom", path: ["newPassword"], message: "رمز عبور جدید باید با رمز فعلی متفاوت باشد" });
+  }
+});
+
 export const updateUserRoleSchema = z.object({
   id,
   role: roleSchema,

@@ -7,6 +7,8 @@ import {
   historyQuerySchema,
   pushSubscriptionSchema,
   pushUnsubscribeSchema,
+  passwordChangeSchema,
+  profileUpdateSchema,
   validate,
 } from "@/lib/validators";
 
@@ -56,5 +58,24 @@ describe("API input validation hardening", () => {
       status: ["SCHEDULED", "COMPLETED"],
     });
     expect(validate(auditLimitSchema, "100")).toBe(100);
+  });
+
+  it("rejects privileged profile fields and unsafe password changes", () => {
+    expect(() => validate(profileUpdateSchema, { name: "Valid Name", role: "ADMIN" })).toThrow(AppError);
+    expect(() => validate(profileUpdateSchema, { name: "x" })).toThrow(AppError);
+    expect(() =>
+      validate(passwordChangeSchema, {
+        currentPassword: "old-password",
+        newPassword: "new-password",
+        confirmPassword: "different-password",
+      }),
+    ).toThrow(AppError);
+    expect(() =>
+      validate(passwordChangeSchema, {
+        currentPassword: "same-password",
+        newPassword: "same-password",
+        confirmPassword: "same-password",
+      }),
+    ).toThrow(AppError);
   });
 });

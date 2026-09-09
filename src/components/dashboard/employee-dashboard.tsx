@@ -19,6 +19,7 @@ import { PushSetup, enablePush, notify, requestNotificationPermission, type Noti
 import { AnalyticsPanel } from "@/components/analytics-panel";
 import { BuddyPanel } from "@/components/buddy/buddy-panel";
 import { CoinsPanel } from "@/components/gamification/coins-panel";
+import { ProfilePanel } from "@/components/profile-panel";
 import { formatDuration, formatPersianNumber, formatPersianTime } from "@/lib/utils";
 import { useLiveRefresh } from "@/lib/use-live";
 import type { EmployeeDashboardState } from "@/types";
@@ -443,6 +444,8 @@ export function EmployeeDashboard({ userName }: { userName: string }) {
       <BuddyPanel userStatus={state.userStatus} suggestions={state.suggestions} timezone={state.settings.timezone} />
 
       <CoinsPanel refreshKey={refreshKey} />
+
+      <ProfilePanel />
 
       {state.timeline.length > 0 && (
         <section className="glass-card rounded-3xl p-5">

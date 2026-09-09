@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import fs from "node:fs";
+import bcrypt from "bcryptjs";
 
 process.env.DATABASE_URL = "file:./tmp-test.db";
 
@@ -12,6 +13,7 @@ let buddySvc: typeof import("@/services/buddy-service");
 let adminSvc: typeof import("@/services/admin-service");
 let gamSvc: typeof import("@/services/gamification-service");
 let annSvc: typeof import("@/services/announcement-service");
+let profileSvc: typeof import("@/services/profile-service");
 let db: typeof import("@/lib/db");
 let ids: Record<string, string> = {};
 
@@ -42,6 +44,7 @@ beforeAll(async () => {
   adminSvc = await import("@/services/admin-service");
   gamSvc = await import("@/services/gamification-service");
   annSvc = await import("@/services/announcement-service");
+  profileSvc = await import("@/services/profile-service");
   const users = await db.prisma.user.findMany();
   ids = Object.fromEntries(users.map((u) => [u.username, u.id]));
   // Self-healing seed: guarantee the users this suite needs exist (dev.db may have been edited)
@@ -389,6 +392,33 @@ describe("Buddy system + group break sync", () => {
     await buddySvc.respondBuddyRequest(ids.u2, list.incomingRequests[0].id, true);
     const u1List = await buddySvc.listBuddies(ids.u1);
     expect(u1List.buddies.map((b) => b.id)).toContain(ids.u2);
+  });
+
+  describe("Self profile and password security", () => {
+    it("updates only the display name and changes the password atomically", async () => {
+      const passwordHash = await bcrypt.hash("Old-password-123", 4);
+      const user = await db.prisma.user.create({
+        data: {
+          name: "Profile User",
+          username: `profile-${Date.now()}`,
+          passwordHash,
+          role: "EMPLOYEE",
+        },
+      });
+
+      const profile = await profileSvc.updateOwnProfile(user.id, "Updated Profile");
+      expect(profile).toMatchObject({ id: user.id, name: "Updated Profile", role: "EMPLOYEE", status: "OFFLINE" });
+      expect(profile).not.toHaveProperty("passwordHash");
+
+      const result = await profileSvc.changeOwnPassword(user.id, "Old-password-123", "New-password-456");
+      expect(result).toEqual({ ok: true });
+      const stored = await db.prisma.user.findUnique({ where: { id: user.id }, select: { passwordHash: true, passwordChangedAt: true } });
+      expect(stored?.passwordChangedAt).toBeTruthy();
+      expect(await bcrypt.compare("New-password-456", stored!.passwordHash)).toBe(true);
+      expect(await bcrypt.compare("Old-password-123", stored!.passwordHash)).toBe(false);
+      const audit = await db.prisma.auditLog.findFirst({ where: { userId: user.id, action: "USER_PASSWORD_CHANGED" } });
+      expect(audit?.details ?? "").not.toMatch(/password|hash/i);
+    });
   });
 
   it("concurrent buddy responses resolve a request only once", async () => {

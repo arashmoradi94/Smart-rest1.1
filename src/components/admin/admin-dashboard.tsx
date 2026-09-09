@@ -22,6 +22,7 @@ import {
   UsersRound,
 } from "lucide-react";
 import { StatusBadge } from "@/components/status-badge";
+import { ProfilePanel } from "@/components/profile-panel";
 import { useLiveRefresh } from "@/lib/use-live";
 import { formatPersianNumber } from "@/lib/utils";
 import type { AdminDashboardState, FullSettings, UserStatus } from "@/types";
@@ -575,6 +576,7 @@ export function AdminDashboard({ adminName }: { adminName: string }) {
               </div>
             </>
           )}
+          {tab === "settings" && <ProfilePanel />}
         </section>
       )}
       </div>

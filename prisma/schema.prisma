@@ -12,6 +12,7 @@ model User {
   name         String
   username     String   @unique
   passwordHash String
+  passwordChangedAt DateTime?
   role         String   @default("EMPLOYEE")
   status       String   @default("OFFLINE")
   onCall       Boolean  @default(false)

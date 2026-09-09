@@ -28,6 +28,7 @@ declare module "@auth/core/jwt" {
     id: string;
     role: UserRole;
     username: string;
+    passwordChangedAt?: string | null;
   }
 }
 
