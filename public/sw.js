@@ -1,5 +1,7 @@
 const CACHE = "break-manager-v2";
 const SHELL = ["/", "/login", "/manifest.webmanifest", "/icon.svg", "/icon-192.png", "/icon-512.png"];
+const recentPushTags = new Map();
+const PUSH_DEDUPLICATION_WINDOW = 5000;
 
 self.addEventListener("install", (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting()));
@@ -44,6 +46,15 @@ self.addEventListener("push", (e) => {
   if (!data || typeof data.title !== "string" || typeof data.body !== "string") return;
   const kinds = ["break-start", "break-end", "reminder", "achievement", "announcement"];
   const kind = kinds.includes(data.kind) ? data.kind : "announcement";
+  const now = Date.now();
+  if (typeof data.tag === "string") {
+    for (const [knownTag, timestamp] of recentPushTags) {
+      if (now - timestamp >= PUSH_DEDUPLICATION_WINDOW) recentPushTags.delete(knownTag);
+    }
+    const previous = recentPushTags.get(data.tag);
+    if (previous && now - previous < PUSH_DEDUPLICATION_WINDOW) return;
+    recentPushTags.set(data.tag, now);
+  }
   const url = typeof data.url === "string" && data.url.startsWith("/") && !data.url.startsWith("//")
     ? data.url
     : "/dashboard";
@@ -54,6 +65,7 @@ self.addEventListener("push", (e) => {
     achievement: [50, 50, 50, 50, 90],
     announcement: [60],
   }[kind] ?? [60];
+  const critical = kind === "break-start" || kind === "break-end";
   e.waitUntil(
     self.registration.showNotification(data.title ?? "مدیریت استراحت", {
       body: data.body ?? "",
@@ -61,6 +73,9 @@ self.addEventListener("push", (e) => {
       badge: "/icon.svg",
       tag: data.tag,
       vibrate: vibration,
+      renotify: critical && typeof data.tag === "string",
+      requireInteraction: critical,
+      silent: false,
       dir: "rtl",
       lang: "fa",
       data: { url },

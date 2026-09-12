@@ -12,6 +12,7 @@ interface InAppNotification {
 }
 
 let audioContext: AudioContext | null = null;
+const activeOscillators = new Set<OscillatorNode>();
 const inAppListeners = new Set<(notification: InAppNotification) => void>();
 const recentNotificationTags = new Map<string, number>();
 const DEDUPLICATION_WINDOW = 5000;
@@ -33,11 +34,26 @@ function getNotificationKind(tag?: string, kind?: NotificationKind): Notificatio
   return "announcement";
 }
 
-function playNotificationSound(kind: NotificationKind) {
+async function unlockAudioContext() {
+  if (typeof window === "undefined" || !window.AudioContext) return;
+  audioContext ??= new AudioContext();
+  if (audioContext.state === "suspended") await audioContext.resume();
+}
+
+async function playNotificationSound(kind: NotificationKind) {
   if (typeof window === "undefined" || !window.AudioContext) return;
   try {
-    audioContext ??= new AudioContext();
+    await unlockAudioContext();
     const context = audioContext;
+    if (!context) return;
+    activeOscillators.forEach((oscillator) => {
+      try {
+        oscillator.stop();
+      } catch {
+        // An oscillator may already have completed its scheduled tone.
+      }
+    });
+    activeOscillators.clear();
     const patterns: Record<NotificationKind, number[]> = {
       "break-start": [392, 587, 784],
       "break-end": [784, 587, 392],
@@ -64,11 +80,14 @@ function playNotificationSound(kind: NotificationKind) {
       gain.gain.setValueAtTime(NOTIFICATION_VOLUME, toneEnd - 0.04);
       gain.gain.exponentialRampToValueAtTime(0.0001, toneEnd);
       oscillator.connect(gain).connect(compressor);
+      activeOscillators.add(oscillator);
+      oscillator.addEventListener("ended", () => activeOscillators.delete(oscillator), { once: true });
       oscillator.start(toneStart);
       oscillator.stop(toneEnd + 0.01);
     });
-    void context.resume().catch(() => {});
-  } catch {}
+  } catch {
+    // Audio is optional; the in-app and system notification paths remain active.
+  }
 }
 
 function vibrateNotification(kind: NotificationKind) {
@@ -111,15 +130,15 @@ async function subscribe(reg: ServiceWorkerRegistration) {
     applicationServerKey: urlBase64ToUint8Array(publicKey),
   });
 }
-export async function enablePush() {
-  if (typeof navigator === "undefined" || !("serviceWorker" in navigator)) return;
+export async function enablePush(): Promise<boolean> {
+  if (typeof navigator === "undefined" || !("serviceWorker" in navigator)) return false;
   try {
     const reg = await navigator.serviceWorker.register("/sw.js");
     if (
       typeof Notification === "undefined" ||
       Notification.permission !== "granted"
     ) {
-      return;
+      return false;
     }
     const sub = await subscribe(reg);
     if (sub) {
@@ -129,12 +148,21 @@ export async function enablePush() {
         body: JSON.stringify(sub.toJSON()),
       });
     }
-  } catch {}
+    return Boolean(sub);
+  } catch {
+    return false;
+  }
 }
 export function PushSetup() {
+  const [notificationSupported] = useState(() =>
+    typeof window !== "undefined" &&
+    "Notification" in window &&
+    "serviceWorker" in navigator,
+  );
   const [permission, setPermission] = useState<NotificationPermission>(() =>
     typeof Notification !== "undefined" ? Notification.permission : "default",
   );
+  const [pushUnavailable, setPushUnavailable] = useState(false);
   const [toast, setToast] = useState<InAppNotification | null>(null);
 
   useEffect(() => {
@@ -147,7 +175,7 @@ export function PushSetup() {
 
   useEffect(() => {
     const unlockAudio = () => {
-      if (audioContext?.state === "suspended") void audioContext.resume().catch(() => {});
+      void unlockAudioContext().catch(() => {});
     };
     window.addEventListener("pointerdown", unlockAudio, { passive: true });
     return () => window.removeEventListener("pointerdown", unlockAudio);
@@ -160,10 +188,11 @@ export function PushSetup() {
   }, [toast]);
 
   async function enableNotifications() {
+    if (!notificationSupported) return;
     const granted = await requestNotificationPermission();
     setPermission(typeof Notification !== "undefined" ? Notification.permission : "denied");
     if (granted) {
-      enablePush();
+      setPushUnavailable(!(await enablePush()));
     }
   }
 
@@ -175,7 +204,15 @@ export function PushSetup() {
           <span>{toast.body}</span>
         </div>
       )}
-      {permission !== "granted" && (
+      {!notificationSupported ? (
+        <div className="glass-card rounded-2xl px-4 py-3 text-sm" role="status">
+          اعلان‌های این مرورگر پشتیبانی نمی‌شود؛ برای دریافت اعلان از مرورگر یا PWA سازگار استفاده کنید.
+        </div>
+      ) : pushUnavailable ? (
+        <div className="glass-card rounded-2xl px-4 py-3 text-sm" role="status">
+          اتصال اعلان‌ها برقرار نشد؛ دسترسی مرورگر و نصب بودن Service Worker را بررسی کنید.
+        </div>
+      ) : permission !== "granted" && (
         <div className="glass-card flex items-center justify-between gap-3 rounded-2xl px-4 py-3 text-sm" role="status">
           <span>
             {permission === "denied"
@@ -211,7 +248,7 @@ export async function notify(title: string, body: string, tag?: string, kind?: N
     const notificationKind = getNotificationKind(tag, kind);
     publishInAppNotification({ title, body, kind: notificationKind });
     vibrateNotification(notificationKind);
-    playNotificationSound(notificationKind);
+    await playNotificationSound(notificationKind);
     if (
       typeof Notification === "undefined" ||
       Notification.permission !== "granted"
