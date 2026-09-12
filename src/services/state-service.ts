@@ -5,6 +5,7 @@ import { companyDayKey } from "@/lib/time";
 import { getSettings } from "@/services/settings-service";
 import { autoAdvance, buildShiftReport, ensureNextBreak, getActiveShift } from "@/services/shift-service";
 import { getGroupBreakStatus } from "@/services/buddy-service";
+import { getSmartBreakQueueForUser, processSmartBreakQueue } from "@/services/smart-break-queue";
 import type { BreakHistoryItem, EmployeeDashboardState, TimelineEvent } from "@/types";
 
 type BreakRow = { status: string; durationMinutes: number | null; endDelayMinutes: number };
@@ -172,12 +173,15 @@ export async function getEmployeeState(
   const user = await prisma.user.findUnique({ where: { id: userId }, select: { onCall: true } });
   const onCall = user?.onCall ?? false;
   const open = shift.breaks[shift.breaks.length - 1];
+  await processSmartBreakQueue(now);
+  const smartBreakQueue = await getSmartBreakQueueForUser(userId, now);
   const base = {
     hasActiveShift: true,
     shiftEnded: false,
     onCall,
     serverTime,
     shiftStartedAt: shift.startedAt.toISOString(),
+    smartBreakQueue: smartBreakQueue ?? undefined,
     stats: {
       ...buildStats(shift.breaks, settings.breakDurationMinutes),
       ...bucketStats(shift.breaks, settings.timezone, now),

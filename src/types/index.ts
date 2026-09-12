@@ -103,6 +103,16 @@ export interface BuddyMatchView {
   isBuddy: boolean;
 }
 
+export type SmartBreakQueueState = "NONE" | "WAITING" | "READY" | "STARTED" | "EXPIRED" | "CANCELLED";
+
+export interface SmartBreakQueueView {
+  state: SmartBreakQueueState;
+  position?: number;
+  readyUntil?: string;
+  waitedMinutes: number;
+  canCancel: boolean;
+}
+
 export interface EmployeeDashboardState {
   hasActiveShift: boolean;
   shiftEnded: boolean;
@@ -112,6 +122,7 @@ export interface EmployeeDashboardState {
   serverTime: string;
   shiftStartedAt?: string;
   shiftEndedAt?: string;
+  smartBreakQueue?: SmartBreakQueueView;
   currentBreak?: {
     id: string;
     scheduledStart: string;

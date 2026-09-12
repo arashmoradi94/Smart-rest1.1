@@ -6,7 +6,7 @@ export async function POST(request: Request) {
   try {
     const user = await requireAuth();
     limit(request, user.id, "write");
-    return Response.json(await startBreak(user.id));
+    return Response.json(await startBreak(user.id, new Date(), { queue: true }));
   } catch (e) {
     return errorResponse(e);
   }

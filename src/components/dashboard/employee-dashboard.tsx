@@ -376,6 +376,46 @@ export function EmployeeDashboard({ userName }: { userName: string }) {
               </button>
             )}
           </section>
+          {state.smartBreakQueue && (
+            <section className="glass-card rounded-2xl p-4" aria-live="polite">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-xs font-medium uppercase tracking-[0.12em]" style={{ color: "var(--muted)" }}>
+                    Smart Break Queue
+                  </p>
+                  <p className="mt-2 text-base font-bold" style={{ color: "var(--warning)" }}>
+                    {state.smartBreakQueue.state === "WAITING" && "شما در صف استراحت قرار گرفتید"}
+                    {state.smartBreakQueue.state === "READY" && "نوبت استراحت شما رسیده است"}
+                    {state.smartBreakQueue.state === "EXPIRED" && "زمان نوبت استراحت شما به پایان رسید"}
+                    {state.smartBreakQueue.state === "CANCELLED" && "درخواست استراحت شما لغو شد"}
+                  </p>
+                  <p className="mt-1 text-sm" style={{ color: "var(--muted)" }}>
+                    {state.smartBreakQueue.state === "WAITING" && `پوزیشن ${state.smartBreakQueue.position ?? 1} · ${state.smartBreakQueue.waitedMinutes} دقیقه انتظار`}
+                    {state.smartBreakQueue.state === "READY" && state.smartBreakQueue.readyUntil && `تا ${formatPersianTime(new Date(state.smartBreakQueue.readyUntil), state.settings.timezone)} فرصت دارید شروع کنید`}
+                    {state.smartBreakQueue.state === "EXPIRED" && "می‌توانید دوباره درخواست دهید."}
+                  </p>
+                </div>
+                {state.smartBreakQueue.canCancel && (
+                  <button
+                    onClick={async () => {
+                      if (busy) return;
+                      setBusy(true);
+                      try {
+                        await fetch("/api/break/queue", { method: "DELETE" });
+                        await fetchState();
+                      } finally {
+                        setBusy(false);
+                      }
+                    }}
+                    className="rounded-xl px-3 py-2 text-xs font-bold"
+                    style={{ background: "rgba(100,116,139,.1)", color: "var(--muted)" }}
+                  >
+                    لغو
+                  </button>
+                )}
+              </div>
+            </section>
+          )}
         </>
       ) : finished ? (
         <section className="glass-card flex flex-col gap-3 rounded-3xl p-6">

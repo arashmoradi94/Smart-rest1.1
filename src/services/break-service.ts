@@ -2,8 +2,10 @@ import { prisma } from "@/lib/db";
 import { addMinutes, AppError } from "@/lib/utils";
 import { publishStates } from "@/lib/events";
 import { calculateEndDelay, calculateStartDelay } from "@/services/break-scheduler";
+import { requestSmartBreakQueue, processSmartBreakQueue } from "@/services/smart-break-queue";
 import { getSettings } from "@/services/settings-service";
 import { ensureNextBreak, getActiveShift } from "@/services/shift-service";
+import type { EmployeeDashboardState } from "@/types";
 
 /**
  * All start/return transitions are server-side, atomic (conditional updateMany
@@ -38,7 +40,17 @@ export async function syncOvertimeBreaks(userId: string, now: Date): Promise<voi
   }
 }
 
-export async function startBreak(userId: string, now = new Date(), opts?: { force?: boolean }) {
+export async function startBreak(
+  userId: string,
+  now?: Date,
+  opts?: { force?: boolean; queue?: boolean },
+): Promise<EmployeeDashboardState>;
+export async function startBreak(
+  userId: string,
+  now: Date,
+  opts: { force?: boolean; queue: true },
+): Promise<Awaited<ReturnType<typeof requestSmartBreakQueue>>>;
+export async function startBreak(userId: string, now = new Date(), opts?: { force?: boolean; queue?: boolean }) {
   const settings = await getSettings();
   let shift = await getActiveShift(userId);
   if (!shift) throw new AppError("ابتدا شیفت خود را شروع کنید", 409);
@@ -46,12 +58,21 @@ export async function startBreak(userId: string, now = new Date(), opts?: { forc
   await ensureNextBreak(shift, settings, now);
   shift = (await getActiveShift(userId))!;
 
+  await processSmartBreakQueue(now);
+
   const open = shift.breaks[shift.breaks.length - 1];
   if (open && (open.status === "ACTIVE" || open.status === "OVERTIME")) {
     throw new AppError("شما هم‌اکنون در استراحت هستید", 409);
   }
   if (!open || open.status !== "SCHEDULED") {
     throw new AppError("استراحت برنامه‌ریزی‌شده‌ای برای شما وجود ندارد", 409);
+  }
+
+  const activeCount = await prisma.break.count({
+    where: { actualStart: { not: null }, actualEnd: null },
+  });
+  if (activeCount >= settings.maxConcurrentBreaks && opts?.queue) {
+    return requestSmartBreakQueue(userId, now);
   }
 
   // A break linked to a forming group must go through the buddy flow so every
@@ -62,6 +83,62 @@ export async function startBreak(userId: string, now = new Date(), opts?: { forc
     if (group?.status === "FORMING") {
       throw new AppError("استراحت شما با گروه Buddy هماهنگ است؛ از پنل گروه استفاده کنید", 409);
     }
+  }
+
+  const queueEntry = await prisma.smartBreakQueueEntry.findFirst({
+    where: { userId, shiftId: shift.id, state: { in: ["WAITING", "READY"] } },
+    orderBy: { queuedAt: "desc" },
+  });
+
+  if (queueEntry && queueEntry.state === "READY") {
+    const entry = await prisma.smartBreakQueueEntry.update({
+      where: { id: queueEntry.id },
+      data: { state: "STARTED", startedAt: now },
+    });
+    const started = await prisma.$transaction(async (tx) => {
+      const activeShift = await tx.shift.findFirst({
+        where: { id: shift.id, userId, status: "ACTIVE", endedAt: null },
+        select: { id: true },
+      });
+      if (!activeShift) throw new AppError("شیفت شما دیگر فعال نیست", 409);
+
+      const activeCount = await tx.break.count({
+        where: { actualStart: { not: null }, actualEnd: null },
+      });
+      if (activeCount >= settings.maxConcurrentBreaks) {
+        throw new AppError("ظرفیت استراحت همزمان تکمیل است؛ چند لحظه دیگر تلاش کنید", 409);
+      }
+      const startDelayMinutes = calculateStartDelay(open.scheduledStart, now);
+      const res = await tx.break.updateMany({
+        where: {
+          id: open.id,
+          shiftId: activeShift.id,
+          userId,
+          status: "SCHEDULED",
+          actualStart: null,
+          actualEnd: null,
+        },
+        data: { actualStart: now, status: "ACTIVE", startDelayMinutes },
+      });
+      if (res.count !== 1) {
+        throw new AppError("استراحت هم‌اکنون آغاز شده یا دیگر قابل آغاز نیست", 409);
+      }
+      await tx.user.update({ where: { id: userId }, data: { status: "ON_BREAK" } });
+      await tx.smartBreakQueueEntry.update({ where: { id: entry.id }, data: { state: "STARTED", startedAt: now, readyAt: now, expiresAt: now } });
+      return startDelayMinutes;
+    });
+
+    if (started <= 1) {
+      const { awardCoins, COIN_RULES } = await import("@/services/gamification-service");
+      await awardCoins(userId, COIN_RULES.BREAK_ON_TIME, `BREAK_ONTIME:${open.id}`).catch(() => {});
+    }
+    const { logAudit } = await import("@/lib/audit");
+    await logAudit(userId, "BREAK_START", `break:${open.id} delay:${started}m queue:READY`);
+    const { sendPushToUser } = await import("@/lib/push");
+    sendPushToUser(userId, { title: "☕ استراحت", body: "زمان استراحت شما شروع شد.", tag: `break-start:${open.id}`, kind: "break-start", url: "/dashboard" }).catch(() => {});
+    publishStates([userId]);
+    const { getEmployeeState } = await import("@/services/state-service");
+    return getEmployeeState(userId, now);
   }
 
   // Atomic transition: conditional update is the single source of truth.

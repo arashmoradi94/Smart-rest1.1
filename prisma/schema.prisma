@@ -37,6 +37,7 @@ model User {
   announcementsAuthored Announcement[] @relation("AnnouncementAuthor")
   announcementReads AnnouncementRead[]
   auditLogs         AuditLog[]
+  smartBreakQueueEntries SmartBreakQueueEntry[]
 }
 
 model Shift {
@@ -50,6 +51,7 @@ model Shift {
 
   user   User    @relation(fields: [userId], references: [id], onDelete: Cascade)
   breaks Break[]
+  smartBreakQueueEntries SmartBreakQueueEntry[]
 
   @@index([userId, status])
 }
@@ -97,6 +99,28 @@ model Settings {
   groupSuggestWindowMinutes Int      @default(10)
   maxGroupBreakLoadRatio    Float    @default(0.3)
   updatedAt                 DateTime @updatedAt
+}
+
+model SmartBreakQueueEntry {
+  id            String    @id @default(cuid())
+  userId        String
+  shiftId       String
+  state         String    @default("WAITING")
+  priorityScore Int       @default(0)
+  queuedAt      DateTime  @default(now())
+  readyAt       DateTime?
+  expiresAt     DateTime?
+  startedAt     DateTime?
+  cancelledAt   DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  shift Shift @relation(fields: [shiftId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, shiftId], map: "sqlite_autoindex_SmartBreakQueueEntry_2")
+  @@index([shiftId, state, priorityScore])
+  @@index([userId, state])
 }
 
 model BuddyRequest {

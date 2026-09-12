@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import fs from "node:fs";
 
 process.env.DATABASE_URL = "file:./tmp-test.db";
@@ -232,5 +232,74 @@ describe("Smart group flow (integration, temp db)", () => {
     const matches = await buddySvc.getBreakMatches(ids.ali, at(T0, 7));
     expect(matches.enabled).toBe(false);
     await settingsSvc.updateSettings({ groupBreakEnabled: true });
+  });
+});
+
+describe("Smart Break Queue", () => {
+  beforeEach(async () => {
+    await db.prisma.smartBreakQueueEntry.deleteMany({});
+    await db.prisma.break.updateMany({
+      where: { actualEnd: null },
+      data: { actualEnd: new Date(), status: "COMPLETED" },
+    });
+    await db.prisma.shift.updateMany({
+      where: { status: "ACTIVE" },
+      data: { status: "ENDED", endedAt: new Date() },
+    });
+  });
+
+  it("queues a normal break request when capacity is full and promotes it back to READY when space frees up", async () => {
+    const queueSvc = await import("@/services/smart-break-queue");
+    const user = await db.prisma.user.create({
+      data: { name: "queue-user-a", username: `queue-user-a-${Date.now()}`, passwordHash: "x", role: "EMPLOYEE" },
+    });
+    const blocker = await db.prisma.user.create({
+      data: { name: "queue-blocker-a", username: `queue-blocker-a-${Date.now() + 1}`, passwordHash: "x", role: "EMPLOYEE" },
+    });
+    await settingsSvc.updateSettings({ maxConcurrentBreaks: 1, groupBreakEnabled: true, maxGroupBreakLoadRatio: 1 });
+    await shiftSvc.startShift(user.id, T0);
+    await shiftSvc.startShift(blocker.id, T0);
+    await breakSvc.startBreak(blocker.id, at(T0, 1), { force: true });
+
+    const queued = await queueSvc.requestSmartBreakQueue(user.id, at(T0, 2));
+    expect(queued.queued).toBe(true);
+    expect(queued.state).toBe("WAITING");
+
+    const waiting = await queueSvc.getSmartBreakQueueForUser(user.id, at(T0, 2));
+    expect(waiting?.state).toBe("WAITING");
+
+    await breakSvc.returnToWork(blocker.id, at(T0, 12));
+    await queueSvc.processSmartBreakQueue(at(T0, 12));
+
+    const ready = await queueSvc.getSmartBreakQueueForUser(user.id, at(T0, 12));
+    expect(ready?.state).toBe("READY");
+
+    const cancelled = await queueSvc.cancelSmartBreakQueue(user.id, at(T0, 13));
+    expect(cancelled.cancelled).toBe(true);
+  });
+
+  it("prevents duplicate queue entries for the same user and shift", async () => {
+    const queueSvc = await import("@/services/smart-break-queue");
+    const user = await db.prisma.user.create({
+      data: { name: "queue-user-b", username: `queue-user-b-${Date.now() + 2}`, passwordHash: "x", role: "EMPLOYEE" },
+    });
+    const blocker = await db.prisma.user.create({
+      data: { name: "queue-blocker-b", username: `queue-blocker-b-${Date.now() + 3}`, passwordHash: "x", role: "EMPLOYEE" },
+    });
+    await settingsSvc.updateSettings({ maxConcurrentBreaks: 1, groupBreakEnabled: true, maxGroupBreakLoadRatio: 1 });
+    await shiftSvc.startShift(user.id, T0);
+    await shiftSvc.startShift(blocker.id, T0);
+    await breakSvc.startBreak(blocker.id, at(T0, 1), { force: true });
+
+    const first = await queueSvc.requestSmartBreakQueue(user.id, at(T0, 4));
+    const second = await queueSvc.requestSmartBreakQueue(user.id, at(T0, 5));
+    expect(first.queued).toBe(true);
+    expect(second.queued).toBe(true);
+    expect(first.entryId).toBe(second.entryId);
+
+    const currentShift = await shiftSvc.getActiveShift(user.id);
+    expect(currentShift).not.toBeNull();
+    const active = await db.prisma.smartBreakQueueEntry.count({ where: { userId: user.id, shiftId: currentShift!.id } });
+    expect(active).toBe(1);
   });
 });
