@@ -222,21 +222,22 @@ export function EmployeeDashboard({ userName }: { userName: string }) {
     <main className="app-shell flex min-h-screen max-w-md flex-col gap-4">
       <PushSetup />
       <header className="glass-card flex items-center justify-between rounded-2xl px-4 py-3">
-        <div>
+        <div className="min-w-0 flex-1">
           <h1 className="text-sm font-bold">{userName} عزیز، خوش آمدی 👋</h1>
           <p className="text-xs" style={{ color: "var(--muted)" }}>
             مدیریت استراحت کال‌سنتر
           </p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex shrink-0 items-center gap-1.5">
           <ThemeToggle />
           <a
             href="#profile-panel"
-            className="flex size-10 items-center justify-center rounded-xl transition hover:opacity-70 focus-visible:outline-2 focus-visible:outline-offset-2"
+            className="flex min-h-10 items-center gap-1.5 rounded-xl px-2.5 text-xs font-bold transition hover:opacity-70 focus-visible:outline-2 focus-visible:outline-offset-2"
             style={{ background: "rgba(100,116,139,.1)", color: "var(--muted)" }}
-            aria-label="مدیریت پروفایل"
+            aria-label="تنظیمات حساب کاربری"
           >
             <UserRound className="size-5" aria-hidden />
+            <span>تنظیمات حساب کاربری</span>
           </a>
           <button
             onClick={() => signOut({ callbackUrl: "/login" })}
